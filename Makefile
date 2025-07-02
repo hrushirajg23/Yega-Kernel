@@ -1,8 +1,8 @@
 .PHONY: all check clean
 
-all: myos.bin check
+all: yegaos.bin check
 
-myos.bin: boot.o kernel.o
+yegaos.bin: boot.o kernel.o
 	i686-elf-gcc -T linker.ld -o $@ -ffreestanding -O2 -nostdlib $^ -lgcc
 
 boot.o: boot.asm
@@ -12,7 +12,7 @@ kernel.o: kernel.c
 	i686-elf-gcc -ffreestanding -c $< -o $@
 
 check:
-	@grub-file --is-x86-multiboot myos.bin && \
+	@grub-file --is-x86-multiboot yegaos.bin && \
 	echo "[OK] Multiboot compliant" || \
 	(echo "[FAIL] Not Multiboot compliant" && exit 1)
 
