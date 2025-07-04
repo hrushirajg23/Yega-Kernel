@@ -1,0 +1,60 @@
+#include <stddef.h>
+
+#include "gdt.h"
+
+#define GDT_SIZE 5
+
+static void set_gdt_entry(int index, uint32_t base, uint32_t limit,
+                          uint8_t access, uint8_t granularity);
+static void fill_gdt(void);
+void gdt_initialize(void);
+static inline void load_gdt(GDTPtr* gdt_descriptor);
+
+GDTEntry gdt[GDT_SIZE];
+GDTPtr gdt_ptr;
+
+static void set_gdt_entry(int index, uint32_t base, uint32_t limit,
+                          uint8_t access, uint8_t granularity) {
+  gdt[index].limit_low = limit & 0xFFFF;
+  gdt[index].base_low = base & 0xFFFF;
+  gdt[index].base_middle = (base >> 16) & 0xFF;
+  gdt[index].access = access;
+  gdt[index].granularity = ((limit >> 16) & 0x0F) | (granularity << 4);
+  gdt[index].base_high = (base >> 24) & 0xFF;
+}
+
+static void fill_gdt(void) {
+
+  // NULL Descriptor
+  set_gdt_entry(0, 0, 0, 0, 0);
+
+  // kernel code segment
+  set_gdt_entry(1, 0, 0xFFFFF, 0x9A, 0xC);
+
+  // kernel data segment
+  set_gdt_entry(2, 0, 0xFFFFF, 0x92, 0xC);
+
+  // user code segment
+  set_gdt_entry(3, 0, 0xFFFFF, 0xFA, 0xC);
+
+  // user data segment
+  set_gdt_entry(4, 0, 0xFFFFF, 0xF2, 0xC);
+}
+
+
+void gdt_initialize(void) {
+  fill_gdt();
+  gdt_ptr.limit = sizeof(gdt) - 1;
+  gdt_ptr.base  = (uint32_t)gdt;
+
+  load_gdt(&gdt_ptr);
+}
+
+static inline void load_gdt(GDTPtr* gdt_descriptor) {
+    __asm__ volatile (
+        "lgdt (%0)"
+        :
+        : "r"(gdt_descriptor)
+        : "memory"
+    );
+}

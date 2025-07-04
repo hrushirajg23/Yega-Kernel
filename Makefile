@@ -14,7 +14,13 @@ $(BUILD_DIR)/boot.o: $(BOOT_SRC) | $(BUILD_DIR)
 $(BUILD_DIR)/kernel.o: $(KERNEL_SRC) | $(BUILD_DIR)
 	i686-elf-gcc -ffreestanding -c $< -o $@
 
-$(BUILD_DIR)/yegaos.bin: $(BUILD_DIR)/boot.o $(BUILD_DIR)/kernel.o | $(BUILD_DIR)
+$(BUILD_DIR)/gdt.o: gdt/gdt.c | $(BUILD_DIR)
+	i686-elf-gcc -ffreestanding -c $< -o $@
+
+$(BUILD_DIR)/gdt_asm.o: gdt/gdt.asm | $(BUILD_DIR)
+	nasm -f elf32 $< -o $@
+
+$(BUILD_DIR)/yegaos.bin: $(BUILD_DIR)/boot.o $(BUILD_DIR)/kernel.o $(BUILD_DIR)/gdt.o $(BUILD_DIR)/gdt_asm.o | $(BUILD_DIR)
 	i686-elf-gcc -T linker/linker.ld -o $@ -ffreestanding -O2 -nostdlib $^ -lgcc
 
 $(BUILD_DIR)/yegaos.iso: $(BUILD_DIR)/yegaos.bin grub/grub.cfg
