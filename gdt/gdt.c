@@ -8,7 +8,7 @@ static void set_gdt_entry(int index, uint32_t base, uint32_t limit,
                           uint8_t access, uint8_t granularity);
 static void fill_gdt(void);
 void gdt_initialize(void);
-static inline void load_gdt(GDTPtr* gdt_descriptor);
+static inline void load_gdt(GDTPtr *gdt_descriptor);
 
 GDTEntry gdt[GDT_SIZE];
 GDTPtr gdt_ptr;
@@ -41,20 +41,14 @@ static void fill_gdt(void) {
   set_gdt_entry(4, 0, 0xFFFFF, 0xF2, 0xC);
 }
 
-
 void gdt_initialize(void) {
   fill_gdt();
   gdt_ptr.limit = sizeof(gdt) - 1;
-  gdt_ptr.base  = (uint32_t)gdt;
+  gdt_ptr.base = (uint32_t)gdt;
 
   load_gdt(&gdt_ptr);
 }
 
-static inline void load_gdt(GDTPtr* gdt_descriptor) {
-    __asm__ volatile (
-        "lgdt (%0)"
-        :
-        : "r"(gdt_descriptor)
-        : "memory"
-    );
+static inline void load_gdt(GDTPtr *gdt_descriptor) {
+  __asm__ volatile("lgdt (%0)" : : "r"(gdt_descriptor) : "memory");
 }
