@@ -24,7 +24,7 @@ static void set_idt_entry(uint8_t vector, void (*isr)(void), uint8_t flags) {
   idt[vector].isr_high = (uint32_t)isr >> 16;
 }
 
-static void initialize_idt(void) {
+void initialize_idt(void) {
   idtr.limit = sizeof(idt) - 1;
   idtr.base = (uint32_t)idt;
 

@@ -17,4 +17,8 @@ typedef struct {
   uint32_t base;
 } __attribute__((packed)) GDTPtr;
 
+
+void gdt_initialize(void);
+void gdt_flush(void);
+
 #endif

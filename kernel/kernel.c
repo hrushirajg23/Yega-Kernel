@@ -2,6 +2,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "gdt.h"
+#include "idt.h"
+#include "pic.h"
+#include "serial.h"
+
 #if defined(__linux__)
 #error                                                                         \
     "You are not using a cross-compiler, you will most certainly run into trouble"
@@ -10,6 +15,18 @@
 #if !defined(__i386__)
 #error "This tutorial needs to be compiled with a ix86-elf compiler"
 #endif
+
+#define VGA_WIDTH 80
+#define VGA_HEIGHT 25
+#define VGA_MEMORY 0xB8000
+
+#define OFFSET1 0x20
+#define OFFSET2 0x28
+
+size_t terminal_row;
+size_t terminal_column;
+uint8_t terminal_color;
+uint16_t *terminal_buffer = (uint16_t *)VGA_MEMORY;
 
 enum vga_color {
   VGA_COLOR_BLACK = 0,
@@ -44,15 +61,6 @@ size_t strlen(const char *str) {
     len++;
   return len;
 }
-
-#define VGA_WIDTH 80
-#define VGA_HEIGHT 25
-#define VGA_MEMORY 0xB8000
-
-size_t terminal_row;
-size_t terminal_column;
-uint8_t terminal_color;
-uint16_t *terminal_buffer = (uint16_t *)VGA_MEMORY;
 
 void terminal_initialize(void) {
   terminal_row = 0;
@@ -93,7 +101,17 @@ void terminal_writestring(const char *data) {
 }
 
 void kernel_main(void) {
-  terminal_initialize();
+  serial_init();
+  serial_writestring("Serial initialized. Booting...\n");
 
+  terminal_initialize();
   terminal_writestring("Hello, Welcome To Yega Kernel!\n");
+
+  serial_writestring("GDT init...\n");
+  gdt_initialize();
+  serial_writestring("IDT init...\n");
+  initialize_idt();
+  serial_writestring("PIC remap...\n");
+  remap_pic(OFFSET1, OFFSET2);
+  serial_writestring("Boot complete.\n");
 }

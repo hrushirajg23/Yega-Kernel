@@ -7,8 +7,8 @@
 static void set_gdt_entry(int index, uint32_t base, uint32_t limit,
                           uint8_t access, uint8_t granularity);
 static void fill_gdt(void);
-void gdt_initialize(void);
 static inline void load_gdt(GDTPtr *gdt_descriptor);
+extern void gdt_flush(void);
 
 GDTEntry gdt[GDT_SIZE];
 GDTPtr gdt_ptr;
@@ -47,6 +47,7 @@ void gdt_initialize(void) {
   gdt_ptr.base = (uint32_t)gdt;
 
   load_gdt(&gdt_ptr);
+  gdt_flush();
 }
 
 static inline void load_gdt(GDTPtr *gdt_descriptor) {

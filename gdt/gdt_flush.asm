@@ -1,8 +1,10 @@
-reloadSegments:
-    JMP 0x08:.reload_CS
+global gdt_flush
 
-.reload_CS:
-    MOV AX, 010
+gdt_flush:
+    JMP 0x08:.flush_cs
+
+.flush_cs:
+    MOV AX, 0x10
     MOV DS, AX
     MOV ES, AX
     MOV FS, AX
