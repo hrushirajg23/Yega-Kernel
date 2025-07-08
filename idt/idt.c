@@ -25,10 +25,7 @@ static void set_idt_entry(uint8_t vector, void (*isr)(void), uint8_t flags) {
   idt[vector].isr_high = (uint32_t)isr >> 16;
 }
 
-void initialize_idt(void) {
-  idtr.limit = sizeof(idt) - 1;
-  idtr.base = (uint32_t)idt;
-
+void setup_idt(void) {
   for (uint8_t vector = 0; vector < 32; vector++) {
     set_idt_entry(vector, isr_stub_table[vector], 0x8E);
   }
@@ -36,6 +33,11 @@ void initialize_idt(void) {
   for (uint8_t vector = 32; vector < 48; vector++) {
     set_idt_entry(vector, irq_stub_table[vector - 32], 0x8E);
   }
+}
+
+void initialize_idt() {
+  idtr.limit = sizeof(idt) - 1;
+  idtr.base = (uint32_t)idt;
 
   load_idt(&idtr);
 }

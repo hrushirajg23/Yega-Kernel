@@ -22,7 +22,7 @@ static void get_digits(char *buf, int num, int *i) {
   }
 }
 
-static void serial_init() {
+void serial_init() {
   outb(COM1 + 1, 0x00); // Disable all interrupts
   outb(COM1 + 3, 0x80); // Enable DLAB (set baud rate divisor)
   outb(COM1 + 0, 0x03); // Set divisor to 3 (io byte) 38400 baud

@@ -4,9 +4,12 @@
 
 #include "gdt.h"
 #include "idt.h"
+#include "irq.h"
 #include "pic.h"
+#include "pit.h"
 #include "serial.h"
 #include "vga_display.h"
+
 
 #if defined(__linux__)
 #error                                                                         \
@@ -19,6 +22,7 @@
 
 #define OFFSET1 0x20
 #define OFFSET2 0x28
+#define FREQUENCY 100
 
 
 void kernel_main(void) {
@@ -30,9 +34,21 @@ void kernel_main(void) {
 
   serial_writestring("GDT init...\n");
   gdt_initialize();
-  serial_writestring("IDT init...\n");
-  initialize_idt();
+
   serial_writestring("PIC remap...\n");
   remap_pic(OFFSET1, OFFSET2);
+
+  serial_writestring("IDT setup...\n");
+  setup_idt();
+
+  serial_writestring("Install timer & keyboard drivers..\n");
+  install_handlers();
+
+  serial_writestring("PIT init...\n");
+  init_timer(FREQUENCY);
+
+  serial_writestring("IDT init...\n");
+  initialize_idt();
+
   serial_writestring("Boot complete.\n");
 }

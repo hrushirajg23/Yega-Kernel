@@ -10,7 +10,7 @@ LDFLAGS   = -T linker/linker.ld
 BUILD_DIR = build
 ISO_DIR   = iso
 
-# === Sources & Objects ===
+# === Sources ===
 KERNEL_SRC      = kernel/kernel.c
 BOOT_SRC        = boot/boot.asm
 GDT_C_SRC       = gdt/gdt.c
@@ -18,9 +18,16 @@ GDT_ASM_SRC     = gdt/gdt_flush.asm
 IDT_SRC         = idt/idt.c
 ISR_ASM_SRC     = idt/isr/isr.asm
 EXCEPTIONS_SRC  = idt/isr/exceptions.c
+IRQ_ASM_SRC     = idt/irq/irq.asm
+IRQ_SRC         = idt/irq/irq.c
 PIC_SRC         = idt/pic/pic.c
 SERIAL_SRC      = drivers/serial.c
+TIMER_SRC       = drivers/timer.c
+KEYBOARD_SRC    = drivers/keyboard.c
+VGA_SRC         = display/vga_display.c
+PIT_SRC         = pit/pit.c
 
+# === Objects ===
 OBJS = \
 	$(BUILD_DIR)/boot.o \
 	$(BUILD_DIR)/kernel.o \
@@ -29,8 +36,14 @@ OBJS = \
 	$(BUILD_DIR)/idt.o \
 	$(BUILD_DIR)/isr_asm.o \
 	$(BUILD_DIR)/exceptions.o \
+	$(BUILD_DIR)/irq_asm.o \
+	$(BUILD_DIR)/irq.o \
 	$(BUILD_DIR)/pic.o \
-	$(BUILD_DIR)/serial.o
+	$(BUILD_DIR)/serial.o \
+	$(BUILD_DIR)/timer.o \
+	$(BUILD_DIR)/keyboard.o \
+	$(BUILD_DIR)/vga_display.o \
+	$(BUILD_DIR)/pit.o
 
 # === Default ===
 all: $(BUILD_DIR)/yegaos.iso check
@@ -49,6 +62,9 @@ $(BUILD_DIR)/gdt_flush.o: $(GDT_ASM_SRC) | $(BUILD_DIR)
 $(BUILD_DIR)/isr_asm.o: $(ISR_ASM_SRC) | $(BUILD_DIR)
 	$(NASM) -f elf32 $< -o $@
 
+$(BUILD_DIR)/irq_asm.o: $(IRQ_ASM_SRC) | $(BUILD_DIR)
+	$(NASM) -f elf32 $< -o $@
+
 # === Compile C ===
 $(BUILD_DIR)/%.o: kernel/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
@@ -62,10 +78,25 @@ $(BUILD_DIR)/idt.o: $(IDT_SRC) | $(BUILD_DIR)
 $(BUILD_DIR)/exceptions.o: $(EXCEPTIONS_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
+$(BUILD_DIR)/irq.o: $(IRQ_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
 $(BUILD_DIR)/pic.o: $(PIC_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(BUILD_DIR)/serial.o: $(SERIAL_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/timer.o: $(TIMER_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/keyboard.o: $(KEYBOARD_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/vga_display.o: $(VGA_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/pit.o: $(PIT_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 # === Link ELF ===
@@ -76,7 +107,7 @@ $(BUILD_DIR)/yegaos.elf: $(OBJS)
 $(BUILD_DIR)/yegaos.bin: $(BUILD_DIR)/yegaos.elf
 	$(OBJCOPY) -O binary $< $@
 
-# === Build ISO (now depends on both ELF and BIN) ===
+# === Build ISO ===
 $(BUILD_DIR)/yegaos.iso: \
     $(BUILD_DIR)/yegaos.elf \
     $(BUILD_DIR)/yegaos.bin \

@@ -56,7 +56,7 @@ global irq_stub_table
 
 irq_stub_table:
 %assign i 0
-%rep    32
+%rep    16
     dd irq_stub_%+i 
 %assign i i+1
 %endrep
