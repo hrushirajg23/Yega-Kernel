@@ -10,6 +10,7 @@
 __attribute__((aligned(0x10))) static idt_entry_t idt[IDT_MAX_DESCRIPTORS];
 static idtr_t idtr;
 extern void (*isr_stub_table[IDT_MAX_DESCRIPTORS])(void);
+extern void (*irq_stub_table[IDT_MAX_DESCRIPTORS])(void);
 
 static void load_idt(idtr_t *idt_descriptor) {
   __asm__ volatile("lidt (%0)" : : "r"(idt_descriptor) : "memory");
@@ -30,6 +31,10 @@ void initialize_idt(void) {
 
   for (uint8_t vector = 0; vector < 32; vector++) {
     set_idt_entry(vector, isr_stub_table[vector], 0x8E);
+  }
+
+  for (uint8_t vector = 32; vector < 48; vector++) {
+    set_idt_entry(vector, irq_stub_table[vector - 32], 0x8E);
   }
 
   load_idt(&idtr);
