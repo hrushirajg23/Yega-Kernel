@@ -1,12 +1,79 @@
 %macro isr_err_stub 1
 isr_stub_%+%1:
+    ; push interrupt number
+    push dword %1
+
+    ; push registers
+    pusha
+
+    ; push segment registers
+    push ds
+    push es
+    push fs
+    push gs
+
+    ; load kernel data segment selector into DS/ES/FS/GS
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    ; pass pointer to registers struct
+    mov eax, esp
+    push eax
+
     call exception_handler
+
+    add esp, 4       ; remove arg to handler
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    popa
+    add esp, 8       ; remove int_no + dummy err_code
+    
     iret 
 %endmacro
 
 %macro isr_no_err_stub 1
 isr_stub_%+%1:
+    ; push dummy error code
+    push dword 0
+
+    ; push interrupt number
+    push dword %1
+
+    ; push registers
+    pusha
+
+    ; push segment registers
+    push ds
+    push es
+    push fs
+    push gs
+
+    ; load kernel data segment selector into DS/ES/FS/GS
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    ; pass pointer to registers struct
+    mov eax, esp
+    push eax
+
     call exception_handler
+
+    add esp, 4       ; remove arg to handler
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    popa
+    add esp, 8       ; remove int_no + dummy err_code
+
     iret
 %endmacro
 
