@@ -53,6 +53,13 @@ void remap_pic(int offset1, int offset2) {
   outb(PIC2_DATA, 0);
 }
 
+void send_EOI(uint8_t irq) {
+  if (irq >= 8)
+    outb(PIC2_COMMAND, PIC_EOI);
+
+  outb(PIC1_COMMAND, PIC_EOI);
+}
+
 /* setting a bit 1 */
 void IRQ_set_mask(uint8_t IRQline) {
   uint16_t port;
