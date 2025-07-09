@@ -7,18 +7,23 @@
 
 static void get_digits(char *buf, int num, int *i) {
   if (num == 0) {
-    buf[0] = '0';
+    buf[(*i)++] = '0';
     return;
   }
 
+  int is_negative = 0;
   if (num < 0) {
-    buf[*i++] = '-';
+    is_negative = 1;
     num = -num;
   }
 
   while (num > 0) {
-    buf[*i++] = '0' + (num % 10);
+    buf[(*i)++] = '0' + (num % 10);
     num /= 10;
+  }
+
+  if (is_negative) {
+    buf[(*i)++] = '-';
   }
 }
 

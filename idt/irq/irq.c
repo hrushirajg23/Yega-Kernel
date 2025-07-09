@@ -15,16 +15,32 @@ void install_handlers(void) {
   irq_handlers[1] = keyboard_driver;
 }
 
+// void irq_handler(registers_t *regs) {
+//   uint8_t int_num = (uint8_t)regs->int_no - 32;
+
+//   serial_writestring("Recieved IRQ: ");
+//   serial_writeint(int_num);
+//   serial_writestring("\n");
+
+//   if (irq_handlers[int_num])
+//     irq_handlers[int_num](regs);
+
+//   send_EOI(int_num);
+// }
+
 void irq_handler(registers_t *regs) {
-  uint8_t int_num = (uint8_t)regs->int_no - 32;
+  serial_writestring("RAW int_no: ");
+  serial_writeint(regs->int_no);
+  serial_writestring("\n");
 
-  serial_writestring("Recieved IRQ: ");
-  serial_writeint(int_num);
+  uint8_t irq = regs->int_no - 32;
+  serial_writestring("IRQ#: ");
+  serial_writeint(irq);
+  serial_writestring(" hit\n");
 
-  if (irq_handlers[int_num])
-    irq_handlers[int_num](regs);
+  if (irq_handlers[irq])
+    irq_handlers[irq](regs);
 
-  send_EOI(int_num);
+  send_EOI(irq);
 }
-
 

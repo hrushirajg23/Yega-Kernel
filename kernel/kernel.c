@@ -51,4 +51,6 @@ void kernel_main(void) {
   initialize_idt();
 
   serial_writestring("Boot complete.\n");
+
+  while (1) { asm volatile("hlt"); }
 }

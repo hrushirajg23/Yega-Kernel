@@ -8,9 +8,9 @@ void exception_handler(registers_t *regs) {
   const char *message = exception_messages[regs->int_no];
   int int_num = regs->int_no;
   uint32_t err = regs->err_code;
-  uint32_t eip = regs->eip;
-  uint32_t cs = regs->cs;
-  uint32_t eflags = regs->eflags;
+  // uint32_t eip = regs->eip;
+  // uint32_t cs = regs->cs;
+  // uint32_t eflags = regs->eflags;
   uint32_t eax = regs->eax;
   uint32_t esi = regs->esi;
   uint32_t ds = regs->ds;
@@ -25,15 +25,6 @@ void exception_handler(registers_t *regs) {
 
   serial_writestring("\nInterrupt Number: ");
   serial_writeint(int_num);
-
-  serial_writestring("\nEIP: ");
-  serial_writehex(eip);
-
-  serial_writestring("\nCS: ");
-  serial_writehex(cs);
-
-  serial_writestring("\nEFLAGS: ");
-  serial_writehex(eflags);
 
   serial_writestring("\nEAX: ");
   serial_writehex(eax);

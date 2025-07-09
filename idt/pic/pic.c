@@ -51,6 +51,10 @@ void remap_pic(int offset1, int offset2) {
   /* unmask both PICs */
   outb(PIC1_DATA, 0);
   outb(PIC2_DATA, 0);
+
+  /* umask IRQ0-1*/
+  IRQ_clear_mask(0);
+  IRQ_clear_mask(1);
 }
 
 void send_EOI(uint8_t irq) {
