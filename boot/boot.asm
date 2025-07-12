@@ -23,13 +23,18 @@ stack_top:
 section .text
 global _start:function (_start.end - _start)
 _start:
-	
-	mov esp, stack_top
+    lea esp, [stack_top]         ; Load stack pointer with address of stack_top
+
+	push ebx                     ; second argument on the stack (addr)
+	push eax                     ; first argument on the stack (magic)
 
 	extern kernel_main
 	call kernel_main
-	cli                          ; clear interrupt flag in case kernel_main returns
+	
+	add esp, 0x8
 
+	cli                          ; clear interrupt flag in case kernel_main returns
+	
 ; halt the CPU 
 .hang:	hlt                   
 	jmp .hang
