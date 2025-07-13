@@ -26,6 +26,8 @@ TIMER_SRC       = drivers/timer.c
 KEYBOARD_SRC    = drivers/keyboard.c
 VGA_SRC         = display/vga_display.c
 PIT_SRC         = pit/pit.c
+MANAGER_SRC     = kernel/memory-management/manager.c
+ALLOCATOR_SRC   = kernel/memory-management/allocator.c
 
 # === Objects ===
 OBJS = \
@@ -43,7 +45,9 @@ OBJS = \
 	$(BUILD_DIR)/timer.o \
 	$(BUILD_DIR)/keyboard.o \
 	$(BUILD_DIR)/vga_display.o \
-	$(BUILD_DIR)/pit.o
+	$(BUILD_DIR)/pit.o \
+	$(BUILD_DIR)/manager.o \
+	$(BUILD_DIR)/allocator.o 
 
 # === Default ===
 all: $(BUILD_DIR)/yegaos.iso check
@@ -97,6 +101,12 @@ $(BUILD_DIR)/vga_display.o: $(VGA_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(BUILD_DIR)/pit.o: $(PIT_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/manager.o: $(MANAGER_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/allocator.o: $(ALLOCATOR_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 # === Link ELF ===
