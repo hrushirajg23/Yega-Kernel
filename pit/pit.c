@@ -12,14 +12,14 @@
 #define PIT_COMMAND_REG 0x43
 #define PIT_CHANNEL_0_DATA_REG 0x40
 
-#define CHANNEL0 0x0  
-#define CHANNEL1 0x1 
-#define CHANNEL2 0x2  
+#define CHANNEL0 0x0
+#define CHANNEL1 0x1
+#define CHANNEL2 0x2
 
 #define ACCESS_LATCH_COUNT 0x0
-#define ACCESS_LSB         0x1
-#define ACCESS_MSB         0x2
-#define ACCESS_LSB_MSB     0x3
+#define ACCESS_LSB 0x1
+#define ACCESS_MSB 0x2
+#define ACCESS_LSB_MSB 0x3
 
 #define MODE_INTERRUPT_ON_TERMINAL_COUNT 0x0
 #define MODE_RATE_GENERATOR 0x2
@@ -30,15 +30,13 @@
 
 /* Initialize PIT with given frequency */
 void init_timer(int frequency) {
-    uint16_t divisor = 1193180 / frequency;
+  uint16_t divisor = 1193180 / frequency;
 
-    uint8_t command = (CHANNEL0 << 6)     
-                    | (ACCESS_LSB_MSB << 4)  
-                    | (MODE_SQUARE_WAVE_GENERATOR << 1)  
-                    | BINARY_MODE;          
+  uint8_t command = (CHANNEL0 << 6) | (ACCESS_LSB_MSB << 4) |
+                    (MODE_SQUARE_WAVE_GENERATOR << 1) | BINARY_MODE;
 
-    outb(PIT_COMMAND_REG, command);
-    io_wait();
-    outb(PIT_CHANNEL_0_DATA_REG, divisor & 0xFF);    
-    outb(PIT_CHANNEL_0_DATA_REG, (divisor >> 8) & 0xFF);  
+  outb(PIT_COMMAND_REG, command);
+  io_wait();
+  outb(PIT_CHANNEL_0_DATA_REG, divisor & 0xFF);
+  outb(PIT_CHANNEL_0_DATA_REG, (divisor >> 8) & 0xFF);
 }

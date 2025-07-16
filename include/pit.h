@@ -1,3 +1,9 @@
+/**
+ * @file  pit.h
+ * @brief PIT header file
+ * @date 2025-07-14
+ */
+
 #ifndef PIT_H
 #define PIT_H
 

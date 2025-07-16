@@ -8,9 +8,9 @@
 #include <stdint.h>
 
 #include "irq.h"
+#include "keyboard.h"
 #include "pic.h"
 #include "serial.h"
-#include "keyboard.h"
 #include "timer.h"
 
 typedef void (*irq_handler_t)(registers_t *);
@@ -39,4 +39,3 @@ void irq_handler(registers_t *regs) {
 
   send_EOI(irq);
 }
-

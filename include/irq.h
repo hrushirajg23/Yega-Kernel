@@ -1,3 +1,9 @@
+/**
+ * @file  irq.h
+ * @brief Functinalities to handle interupt requests (IRQs)
+ * @date 2025-07-14
+ */
+
 #ifndef IRQ_H
 #define IRQ_H
 

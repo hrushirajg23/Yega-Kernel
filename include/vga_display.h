@@ -1,3 +1,9 @@
+/**
+ * @file  vga_display.h
+ * @brief Functionality for vga display
+ * @date 2025-07-14
+ */
+
 #ifndef VGA_DISPLAY_H
 #define VGA_DISPLAY_H
 
@@ -7,7 +13,6 @@
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
 #define VGA_MEMORY 0xB8000
-
 
 enum vga_color {
   VGA_COLOR_BLACK = 0,
@@ -41,4 +46,3 @@ void terminal_writestring(const char *data);
 size_t strlen(const char *str);
 
 #endif
-

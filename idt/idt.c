@@ -1,6 +1,6 @@
 /**
  * @file  idt.c
- * @brief Setting up Interrupt Descriptor Table 
+ * @brief Setting up Interrupt Descriptor Table
  *        and load with inline assembly
  *        from OSDev
  * @date 2025-07-14

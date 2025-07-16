@@ -18,7 +18,7 @@ extern uint8_t __kernel_start;
 extern uint8_t __kernel_end;
 
 #define KERNEL_START ((uintptr_t)&__kernel_start)
-#define KERNEL_END   ((uintptr_t)&__kernel_end)
+#define KERNEL_END ((uintptr_t)&__kernel_end)
 
 typedef struct multiboot_info {
   uint32_t flags;
@@ -52,6 +52,5 @@ typedef struct multiboot_mmap_entry {
   uint64_t len;
   uint32_t type;
 } __attribute__((packed)) multiboot_mmap_entry_t;
-
 
 #endif

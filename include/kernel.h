@@ -1,3 +1,9 @@
+/**
+ * @file  kernel.h
+ * @brief Functionality for kernel main entry
+ * @date 2025-07-14
+ */
+
 #ifndef KERNEL_H
 #define KERNEL_H
 

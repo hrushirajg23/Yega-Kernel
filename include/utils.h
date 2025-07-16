@@ -4,12 +4,11 @@
  * @date 2025-07-14
  */
 
-
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #define ALIGNUP(offset, align) ((offset) + ((align) + 1) & ~((align)-1))
 

@@ -1,21 +1,22 @@
 /**
  * @file  vga_display.c
  * @brief Functionality for setting up vga buffer
- *         Includes functions to write on the screen. 
+ *         Includes functions to write on the screen.
  *         from OSDev
  * @date 2025-07-14
  */
 
+#include "vga_display.h"
 #include <stddef.h>
 #include <stdint.h>
-#include "vga_display.h"
 
 size_t terminal_row;
 size_t terminal_column;
 uint8_t terminal_color;
 uint16_t *terminal_buffer = (uint16_t *)VGA_MEMORY;
 
-// Function to create a VGA entry color by combining foreground and background colors
+// Function to create a VGA entry color by combining foreground and background
+// colors
 uint8_t vga_entry_color(enum vga_color fg, enum vga_color bg) {
   return fg | bg << 4;
 }
@@ -41,9 +42,7 @@ void terminal_initialize(void) {
 }
 
 // Function to set the terminal color
-void terminal_setcolor(uint8_t color) {
-  terminal_color = color;
-}
+void terminal_setcolor(uint8_t color) { terminal_color = color; }
 
 // Function to write a character to a specific position on the terminal
 void terminal_putentryat(char c, uint8_t color, size_t x, size_t y) {

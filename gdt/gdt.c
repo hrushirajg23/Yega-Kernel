@@ -1,6 +1,6 @@
 /**
  * @file  gdt.c
- * @brief Setting up Global Descriptor Table 
+ * @brief Setting up Global Descriptor Table
  *        and load with inline assembly
  *        from OSDev
  * @date 2025-07-14

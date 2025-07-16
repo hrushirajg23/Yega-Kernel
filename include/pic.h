@@ -1,3 +1,9 @@
+/**
+ * @file  pic.h
+ * @brief Functionality for Programmable Interrupt Controller
+ * @date 2025-07-14
+ */
+
 #ifndef PIC_H
 #define PIC_H
 

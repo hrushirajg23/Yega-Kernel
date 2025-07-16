@@ -72,12 +72,12 @@ void serial_writeint(int num) {
 
 /* Writes a hex number to the serial port */
 void serial_writehex(uint32_t num) {
-    char hex_chars[] = "0123456789ABCDEF";
+  char hex_chars[] = "0123456789ABCDEF";
 
-    serial_writestring("0x");
+  serial_writestring("0x");
 
-    for (int i = 28; i >= 0; i -= 4) {
-        char c = hex_chars[(num >> i) & 0xF];
-        serial_writechar(c);
-    }
+  for (int i = 28; i >= 0; i -= 4) {
+    char c = hex_chars[(num >> i) & 0xF];
+    serial_writechar(c);
+  }
 }

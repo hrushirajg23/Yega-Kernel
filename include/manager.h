@@ -1,3 +1,10 @@
+/**
+ * @file  manager.h
+ * @brief Functionality for memory manager such as finding available memory and
+ *        setting up heap
+ * @date 2025-07-14
+ */
+
 #ifndef MANAGER_H
 #define MANAGER_H
 
