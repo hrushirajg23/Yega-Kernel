@@ -57,6 +57,7 @@ void gdt_initialize(void) {
   gdt_ptr.base = (uint32_t)gdt;
 
   load_gdt(&gdt_ptr);
+  gdt_flush();
 }
 
 /* Load the GDT */

@@ -27,4 +27,6 @@ typedef struct {
 
 void gdt_initialize(void);
 
+/* Flush the GDT (reload from assembly)*/
+void gdt_flush(void);
 #endif
