@@ -1,3 +1,9 @@
+/**
+ * @file  registers.h
+ * @brief Structure for registers
+ * @date 2025-07-14
+ */
+
 #ifndef REGISTERS_H
 #define REGISTERS_H
 

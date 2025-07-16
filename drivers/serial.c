@@ -1,3 +1,10 @@
+/**
+ * @file  serial.c
+ * @brief Functionality to write on serial port
+ *        from OSDev
+ * @date 2025-07-14
+ */
+
 #include <stdint.h>
 
 #include "io_access.h"
@@ -5,6 +12,7 @@
 
 #define COM1 0x3F8
 
+/* This function converts an integer into a character buffer */
 static void get_digits(char *buf, int num, int *i) {
   if (num == 0) {
     buf[(*i)++] = '0';
@@ -27,6 +35,7 @@ static void get_digits(char *buf, int num, int *i) {
   }
 }
 
+/* Initializes the serial port with specific configurations */
 void serial_init() {
   outb(COM1 + 1, 0x00); // Disable all interrupts
   outb(COM1 + 3, 0x80); // Enable DLAB (set baud rate divisor)
@@ -37,17 +46,20 @@ void serial_init() {
   outb(COM1 + 4, 0x0B); // IRQs enabled, RTS/DSR set
 }
 
+/* Writes a single character to the serial port */
 void serial_writechar(char c) {
   while (!(inb(COM1 + 5) & 0x20))
     ;
   outb(COM1, c);
 }
 
+/* Writes a string to the serial port */
 void serial_writestring(const char *str) {
   while (*str)
     serial_writechar(*str++);
 }
 
+/* Writes an integer to the serial port */
 void serial_writeint(int num) {
   char buf[12];
   int i = 0;
@@ -58,6 +70,7 @@ void serial_writeint(int num) {
   }
 }
 
+/* Writes a hex number to the serial port */
 void serial_writehex(uint32_t num) {
     char hex_chars[] = "0123456789ABCDEF";
 

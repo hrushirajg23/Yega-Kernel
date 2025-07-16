@@ -1,3 +1,10 @@
+/**
+ * @file  utils.h
+ * @brief Utility functions for memory management
+ * @date 2025-07-14
+ */
+
+
 #ifndef UTILS_H
 #define UTILS_H
 

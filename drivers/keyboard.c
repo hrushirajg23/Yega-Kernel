@@ -1,3 +1,10 @@
+/**
+ * @file  keyboard.c
+ * @brief Functionality for keyboard driver
+ *        from Bran's Kernel Development Tutorial
+ * @date 2025-07-14
+ */
+
 #include <stdint.h>
 
 #include "io_access.h"

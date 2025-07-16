@@ -1,3 +1,10 @@
+/**
+ * @file  irq.c
+ * @brief Interrupt Request Handlers
+ *        and installing drivers
+ * @date 2025-07-14
+ */
+
 #include <stdint.h>
 
 #include "irq.h"
@@ -10,24 +17,13 @@ typedef void (*irq_handler_t)(registers_t *);
 
 irq_handler_t irq_handlers[16];
 
+/* Install drivers */
 void install_handlers(void) {
   irq_handlers[0] = timer_driver;
   irq_handlers[1] = keyboard_driver;
 }
 
-// void irq_handler(registers_t *regs) {
-//   uint8_t int_num = (uint8_t)regs->int_no - 32;
-
-//   serial_writestring("Recieved IRQ: ");
-//   serial_writeint(int_num);
-//   serial_writestring("\n");
-
-//   if (irq_handlers[int_num])
-//     irq_handlers[int_num](regs);
-
-//   send_EOI(int_num);
-// }
-
+/* Interrupt handler */
 void irq_handler(registers_t *regs) {
   serial_writestring("RAW int_no: ");
   serial_writeint(regs->int_no);

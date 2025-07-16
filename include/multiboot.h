@@ -1,3 +1,10 @@
+/**
+ * @file  multiboot.h
+ * @brief multiboot structures for information from bootloader
+ *        from GNU Website
+ * @date 2025-07-14
+ */
+
 #ifndef MULTIBOOT_H
 #define MULTIBOOT_H
 

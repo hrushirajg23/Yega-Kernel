@@ -1,3 +1,19 @@
+/**
+ * @file  kernel.c
+ * @brief Main kernel entry point with these phases:
+ *        1. Setting up serial output
+ *        2. Setting up memory management
+ *        3. Setting up GDT
+ *        4. Remap PIC
+ *        5. Setting up IDT
+ *        6. Install drivers
+ *        7. Setting up PIT
+ *        8. Enable Interrupts
+ *        10. Setting up VGA display
+ *        11. Start Kernel
+ * @date 2025-07-14
+ */
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -22,6 +38,7 @@
 #error "This tutorial needs to be compiled with a ix86-elf compiler"
 #endif
 
+/* Main kernel entry point */
 void kernel_main(uint32_t magic, uint32_t addr) {
 
   if (magic != MAGIC) {
@@ -45,9 +62,6 @@ void kernel_main(uint32_t magic, uint32_t addr) {
     while (1)
       asm volatile("hlt");
 
-  terminal_initialize();
-  terminal_writestring("Hello, Welcome To Yega Kernel!\n");
-
   serial_writestring("\nGDT init...\n");
   gdt_initialize();
 
@@ -67,6 +81,9 @@ void kernel_main(uint32_t magic, uint32_t addr) {
   initialize_idt();
 
   serial_writestring("Boot complete.\n");
+
+  terminal_initialize();
+  terminal_writestring("Hello, Welcome To Yega Kernel!\n");
 
   while (1) {
     asm volatile("hlt");

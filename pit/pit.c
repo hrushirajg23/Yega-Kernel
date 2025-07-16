@@ -1,3 +1,10 @@
+/**
+ * @file  pit.c
+ * @brief Setting up Programmable Interval Timer
+ *        from Bran's Kernel Development Tutorial
+ * @date 2025-07-14
+ */
+
 #include <stdint.h>
 
 #include "io_access.h"
@@ -21,6 +28,7 @@
 #define BINARY_MODE 0x0
 #define BCD_MODE 0x1
 
+/* Initialize PIT with given frequency */
 void init_timer(int frequency) {
     uint16_t divisor = 1193180 / frequency;
 

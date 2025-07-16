@@ -1,9 +1,15 @@
+/**
+ * @file  exceptions.c
+ * @brief CPU Exceptions handler
+ * @date 2025-07-14
+ */
+
 #include <stdint.h>
 
 #include "exceptions.h"
 #include "serial.h"
 
-
+/* Exception handler */
 void exception_handler(registers_t *regs) {
   const char *message = exception_messages[regs->int_no];
   int int_num = regs->int_no;

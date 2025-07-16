@@ -1,3 +1,11 @@
+/**
+ * @file  gdt.c
+ * @brief Setting up Global Descriptor Table 
+ *        and load with inline assembly
+ *        from OSDev
+ * @date 2025-07-14
+ */
+
 #include <stddef.h>
 
 #include "gdt.h"
@@ -8,11 +16,11 @@ static void set_gdt_entry(int index, uint32_t base, uint32_t limit,
                           uint8_t access, uint8_t granularity);
 static void fill_gdt(void);
 static inline void load_gdt(GDTPtr *gdt_descriptor);
-extern void gdt_flush(void);
 
 GDTEntry gdt[GDT_SIZE];
 GDTPtr gdt_ptr;
 
+/* Set a GDT entry */
 static void set_gdt_entry(int index, uint32_t base, uint32_t limit,
                           uint8_t access, uint8_t granularity) {
   gdt[index].limit_low = limit & 0xFFFF;
@@ -23,6 +31,7 @@ static void set_gdt_entry(int index, uint32_t base, uint32_t limit,
   gdt[index].base_high = (base >> 24) & 0xFF;
 }
 
+/* Fill the GDT with each entry */
 static void fill_gdt(void) {
 
   // NULL Descriptor
@@ -41,15 +50,16 @@ static void fill_gdt(void) {
   set_gdt_entry(4, 0, 0xFFFFF, 0xF2, 0xC);
 }
 
+/* Initialize the GDT */
 void gdt_initialize(void) {
   fill_gdt();
   gdt_ptr.limit = sizeof(gdt) - 1;
   gdt_ptr.base = (uint32_t)gdt;
 
   load_gdt(&gdt_ptr);
-  gdt_flush();
 }
 
+/* Load the GDT */
 static inline void load_gdt(GDTPtr *gdt_descriptor) {
   __asm__ volatile("lgdt (%0)" : : "r"(gdt_descriptor) : "memory");
 }

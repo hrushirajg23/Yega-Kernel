@@ -1,12 +1,20 @@
+/**
+ * @file  allocator.c
+ * @brief Custom physical memory allocator
+ *        Functionalities to allocate and free memory blocks
+ * @date 2025-07-14
+ */
+
 #include <stddef.h>
 #include <stdint.h>
 
 #include "allocator.h"
-#include "utils.h"
 #include "serial.h"
+#include "utils.h"
 
 heap_block_t *head = NULL;
 
+/* Allocate memory */
 void *kalloc(size_t req) {
   req = ALIGNUP(req, ALIGN);
   size_t total_req = req + sizeof(heap_block_t);
@@ -43,6 +51,7 @@ void *kalloc(size_t req) {
   return (void *)(curr + 1);
 }
 
+/* Free memory */
 void kfree(void *ptr) {
   if (!ptr)
     return;

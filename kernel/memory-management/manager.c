@@ -1,20 +1,29 @@
+/**
+ * @file  gdt.c
+ * @brief Setting up memory management
+ *        Functionalities to find available memory blocks, setup heap, and test
+ *        allocator
+ * @date 2025-07-14
+ */
+
 #include <stdint.h>
 
+#include "allocator.h"
 #include "manager.h"
 #include "serial.h"
 #include "utils.h"
-#include "allocator.h"
 
 uintptr_t heap_start, heap_end, kalloc_ptr;
 size_t heap_size = HEAP_SIZE;
 memory_blocks_t free_memory_blocks[MAX_MEMORY_BLOCKS];
 
-int test_allocator();
+static int test_allocator();
 
+/* Initialize memory manager */
 int initialize_memeory_manager(multiboot_info_t *mbi) {
   int num_blocks;
 
-  serial_writestring("flags= ");
+  serial_writestring("\nflags= ");
   serial_writehex(mbi->flags);
 
   num_blocks = find_available_memory(mbi);
@@ -35,21 +44,21 @@ int initialize_memeory_manager(multiboot_info_t *mbi) {
   return test_allocator();
 }
 
-int test_allocator() {
+/* Test allocator */
+static int test_allocator() {
   serial_writestring("Starting allocator test...\n");
 
-  // 1. Allocate a dynamic array of 10 ints
+  // Allocate first array
   int *arr1 = (int *)kalloc(10 * sizeof(int));
   if (!arr1) {
     serial_writestring("arr1 allocation failed!\n");
     return -1;
   }
 
-  // 2. Write to the array
   for (int i = 0; i < 10; i++)
     arr1[i] = i * 2;
 
-  // 3. Read back and verify
+  // Verify
   for (int i = 0; i < 10; i++) {
     if (arr1[i] != i * 2) {
       serial_writestring("Memory corruption detected in arr1!\n");
@@ -59,7 +68,7 @@ int test_allocator() {
 
   serial_writestring("arr1 write/read test passed.\n");
 
-  // 4. Allocate second array
+  // Allocate second array
   int *arr2 = (int *)kalloc(5 * sizeof(int));
   if (!arr2) {
     serial_writestring("arr2 allocation failed!\n");
@@ -69,10 +78,10 @@ int test_allocator() {
   for (int i = 0; i < 5; i++)
     arr2[i] = i + 100;
 
-  // 5. Free arr1
+  // free the first array
   kfree(arr1);
 
-  // 6. Allocate third array, should reuse arr1's space
+  // Allocate third array
   int *arr3 = (int *)kalloc(8 * sizeof(int));
   if (!arr3) {
     serial_writestring("arr3 allocation failed!\n");
@@ -82,7 +91,7 @@ int test_allocator() {
   for (int i = 0; i < 8; i++)
     arr3[i] = i + 200;
 
-  // 7. Verify arr2 is still correct
+  // Verify first array
   for (int i = 0; i < 5; i++) {
     if (arr2[i] != i + 100) {
       serial_writestring("Memory corruption detected in arr2!\n");

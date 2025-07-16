@@ -1,3 +1,10 @@
+/**
+ * @file  pic.c
+ * @brief Remappings and initialization of the Programmable Interrupt Controller
+ *        from OSDev
+ * @date 2025-07-14
+ */
+
 #include <stdint.h>
 
 #include "io_access.h"
@@ -18,7 +25,7 @@
 #define PIC_READ_IRR 0x0a
 #define PIC_READ_ISR 0x0b
 
-/*
+/* Remaps the Programmable Interrupt Controller
 Arguments:
     offset1 - vector offset for master PIC (0x20 - 0x27)
     offset2 - vector offset for slave PIC (0x28 - 0x2F)
@@ -57,6 +64,7 @@ void remap_pic(int offset1, int offset2) {
   IRQ_clear_mask(1);
 }
 
+/* send End of Interrupt */
 void send_EOI(uint8_t irq) {
   if (irq >= 8)
     outb(PIC2_COMMAND, PIC_EOI);
