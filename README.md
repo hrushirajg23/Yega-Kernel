@@ -179,4 +179,4 @@ gdb-multiarch build/yegaos.elf
 ---
 ## **License**
 
-MIT License 
+This project is released under the **MIT License**. See [LICENSE](LICENSE) for details.
