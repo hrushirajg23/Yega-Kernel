@@ -90,7 +90,7 @@ This project helped me:
 ---
 ## How It Works
 
-![[Pasted image 20250714224458.png]]
+![Boot Flow](docs/boot-flow.png)
 
 ---
 ## Requirements
@@ -161,12 +161,10 @@ gdb-multiarch build/yegaos.elf
 - Porting my mini shell into the kernel
 
 ---
-## Screenshots & Videos
+## Screenshots
 
-![[kernelIN1.webm]]
-![[Screenshot from 2025-07-14 23-42-05.png]]
-
-![[Screenshot from 2025-07-14 23-21-51.png]]
+![hello-world](docs/hello-world.png)
+![grub](docs/grub.png)
 
 
 ---
