@@ -28,6 +28,8 @@
 #include "pit.h"
 #include "serial.h"
 #include "vga_display.h"
+#include "zone.h"
+#include "mm.h"
 
 #if defined(__linux__)
 #error                                                                         \
@@ -37,6 +39,9 @@
 #if !defined(__i386__)
 #error "This tutorial needs to be compiled with a ix86-elf compiler"
 #endif
+
+
+
 
 /* Main kernel entry point */
 void kernel_main(uint32_t magic, uint32_t addr) {
@@ -57,10 +62,26 @@ void kernel_main(uint32_t magic, uint32_t addr) {
   serial_writestring("\nkernel_end= ");
   serial_writehex(KERNEL_END);
 
+  serial_writestring("GRUB passed multiboot info at 0x\n"); 
+  serial_writehex(addr);
+
+    if (mbi->flags & MULTIBOOT_FLAG_MEM) {
+        serial_writestring("\nLower memory:  KB\n");
+        serial_writehex(mbi->mem_lower);
+        
+        serial_writestring("\nUpper memory:  KB\n");
+        serial_writehex(mbi->mem_upper);
+    }
+
+  /* machine_specific_memory_setup(mbi); */
+
   int memory_status = initialize_memeory_manager(mbi);
   if (memory_status < 0)
     while (1)
       asm volatile("hlt");
+
+  init_mem(mbi);
+ 
 
   serial_writestring("\nGDT init...\n");
   gdt_initialize();
