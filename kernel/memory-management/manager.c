@@ -12,10 +12,16 @@
 #include "manager.h"
 #include "serial.h"
 #include "utils.h"
+#include "zone.h"
+#include "mm.h"
+
+
+
 
 uintptr_t heap_start, heap_end, kalloc_ptr;
 size_t heap_size = HEAP_SIZE;
 memory_blocks_t free_memory_blocks[MAX_MEMORY_BLOCKS];
+
 
 static int test_allocator();
 
@@ -35,6 +41,10 @@ int initialize_memeory_manager(multiboot_info_t *mbi) {
     print_blocks(num_blocks);
   }
 
+  /*This will allocate the memory block which is capable of 
+   * prividing sufficient memory for mem_map structure
+   */
+
   /* Initialize Heap */
   heap_start = free_memory_blocks[0].start;
   heap_start = ALIGNUP(heap_start, PAGE_SIZE);
@@ -43,6 +53,8 @@ int initialize_memeory_manager(multiboot_info_t *mbi) {
 
   return test_allocator();
 }
+
+
 
 /* Test allocator */
 static int test_allocator() {
@@ -105,59 +117,80 @@ static int test_allocator() {
   return 0;
 }
 
-int find_available_memory(multiboot_info_t *mbi) {
-  serial_writestring("\nmmap addr= ");
-  serial_writehex(mbi->mmap_addr);
+int find_available_memory(multiboot_info_t *mbi)
+{
+    serial_writestring("\n--- Multiboot Memory Info ---\n");
 
-  serial_writestring("\nmmap length= ");
-  serial_writehex(mbi->mmap_length);
+    serial_writestring("mmap addr = ");
+    serial_writehex(mbi->mmap_addr);
+    serial_writestring("\nmmap length = ");
+    serial_writehex(mbi->mmap_length);
+    serial_writestring("\nflags = ");
+    serial_writehex(mbi->flags);
+    serial_writestring("\n");
 
-  int num_block = 0;
-  uint8_t *mmap = (uint8_t *)mbi->mmap_addr;
-  uint8_t *mmap_end = mmap + mbi->mmap_length;
-
-  serial_writestring("\nflags= ");
-  serial_writehex(mbi->flags);
-
-  if (!CHECK_FLAG(mbi->flags, 6))
-    return 0;
-
-  while (mmap < mmap_end) {
-    multiboot_mmap_entry_t *entry = (multiboot_mmap_entry_t *)mmap;
-
-    serial_writestring("\nentry addr= ");
-    serial_writehex(entry->addr);
-
-    serial_writestring("\nentry len= ");
-    serial_writehex(entry->len);
-
-    serial_writestring("\nentry type= ");
-    serial_writehex(entry->type);
-
-    serial_writestring("\nentry size= ");
-    serial_writehex(entry->size);
-
-    if (num_block < MAX_MEMORY_BLOCKS && entry->type == 1) {
-      uint64_t entry_start = entry->addr;
-      uint64_t entry_end = entry_start + entry->len;
-
-      if (entry_start <= KERNEL_END && entry_end > KERNEL_END) {
-        free_memory_blocks[num_block].start = KERNEL_END;
-        free_memory_blocks[num_block].end = entry_end;
-        num_block++;
-      } else if (entry_start > KERNEL_END) {
-        free_memory_blocks[num_block].start = entry_start;
-        free_memory_blocks[num_block].end = entry_end;
-        num_block++;
-      }
+    if (!CHECK_FLAG(mbi->flags, 6)) {
+        serial_writestring("No memory map info from GRUB!\n");
+        return 0;
     }
 
-    mmap += entry->size + sizeof(entry->size);
-  }
+    int num_blocks = 0;
+    uint8_t *mmap = (uint8_t *) (uintptr_t) mbi->mmap_addr;
+    uint8_t *mmap_end = mmap + mbi->mmap_length;
 
-  return num_block;
+    while (mmap < mmap_end) {
+        multiboot_mmap_entry_t *entry = (multiboot_mmap_entry_t *) mmap;
+
+        serial_writestring("\n Start: 0x");
+        serial_writehex(entry->addr);
+        serial_writestring(" | End: 0x");
+        serial_writehex(entry->addr + entry->len);
+        serial_writestring(" | Length: 0x");
+        serial_writehex(entry->len);
+        serial_writestring(" | Type: 0x");
+        serial_writehex(entry->type);
+        serial_writestring("\n");
+
+        if (entry->type == 1 && num_blocks < MAX_MEMORY_BLOCKS) {
+            uint32_t entry_start = entry->addr;
+            uint32_t entry_end   = entry_start + entry->len;
+
+            // Adjust for kernel end
+            if (entry_start <= (uint32_t)KERNEL_END && entry_end > (uint32_t)KERNEL_END) {
+                free_memory_blocks[num_blocks].start = (uint32_t)KERNEL_END;
+                free_memory_blocks[num_blocks].end   = entry_end;
+            } 
+            else if (entry_start > (uint32_t)KERNEL_END) {
+                free_memory_blocks[num_blocks].start = entry_start;
+                free_memory_blocks[num_blocks].end   = entry_end;
+            }
+            else {
+                free_memory_blocks[num_blocks].start = entry_start;
+                free_memory_blocks[num_blocks].end = entry_end;
+            }
+            num_blocks++;
+        }
+
+        mmap += entry->size + sizeof(entry->size);
+    }
+
+    serial_writestring("\nDetected usable memory blocks:\n");
+    for (int i = 0; i < MAX_MEMORY_BLOCKS; i++) {
+        serial_writestring("Block ");
+        serial_writehex(i);
+        serial_writestring(": Start=0x");
+        serial_writehex(free_memory_blocks[i].start);
+        serial_writestring(" End=0x");
+        serial_writehex(free_memory_blocks[i].end);
+        serial_writestring("\n");
+    }
+
+    serial_writestring("-----------------------------\n");
+
+    machine_specific_memory_setup(mbi, free_memory_blocks, num_blocks);
+
+    return num_blocks;
 }
-
 void print_blocks(int num_blocks) {
   for (int i = 0; i < num_blocks; i++) {
     serial_writestring("\nblock ");
