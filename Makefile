@@ -28,6 +28,9 @@ VGA_SRC         = display/vga_display.c
 PIT_SRC         = pit/pit.c
 MANAGER_SRC     = kernel/memory-management/manager.c
 ALLOCATOR_SRC   = kernel/memory-management/allocator.c
+MM_SRC		= kernel/memory-management/mm.c 
+PG_SRC 			= kernel/memory-management/page.asm
+LIST_SRC		= data_structures/list.c
 
 # === Objects ===
 OBJS = \
@@ -47,7 +50,10 @@ OBJS = \
 	$(BUILD_DIR)/vga_display.o \
 	$(BUILD_DIR)/pit.o \
 	$(BUILD_DIR)/manager.o \
-	$(BUILD_DIR)/allocator.o 
+	$(BUILD_DIR)/allocator.o \
+	$(BUILD_DIR)/mm.o \
+	$(BUILD_DIR)/page.o \
+	$(BUILD_DIR)/list.o 
 
 # === Default ===
 all: $(BUILD_DIR)/yegaos.iso check
@@ -67,6 +73,9 @@ $(BUILD_DIR)/isr_asm.o: $(ISR_ASM_SRC) | $(BUILD_DIR)
 	$(NASM) -f elf32 $< -o $@
 
 $(BUILD_DIR)/irq_asm.o: $(IRQ_ASM_SRC) | $(BUILD_DIR)
+	$(NASM) -f elf32 $< -o $@
+
+$(BUILD_DIR)/page.o: $(PG_SRC) | $(BUILD_DIR)
 	$(NASM) -f elf32 $< -o $@
 
 # === Compile C ===
@@ -108,6 +117,13 @@ $(BUILD_DIR)/manager.o: $(MANAGER_SRC) | $(BUILD_DIR)
 
 $(BUILD_DIR)/allocator.o: $(ALLOCATOR_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/mm.o: $(MM_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/list.o: $(LIST_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
 
 # === Link ELF ===
 $(BUILD_DIR)/yegaos.elf: $(OBJS)
