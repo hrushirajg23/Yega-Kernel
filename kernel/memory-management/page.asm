@@ -1,9 +1,10 @@
-.globl enable_paging
+global enable_paging
 
 enable_paging:
-    movl 4(%esp), %eax
-    movl %eax, %cr3
-    movl %cr0, %eax
-    orl  %0x80000000, %eax
-    movl %eax, %cr0
+    mov     eax, [esp + 4]    ; Get the argument (page directory base)
+    mov     cr3, eax          ; Load page directory base address
+    mov     eax, cr0
+    or      eax, 0x80000000   ; Set PG bit (bit 31) to enable paging
+    mov     cr0, eax
     ret
+
