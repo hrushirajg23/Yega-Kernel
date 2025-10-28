@@ -13,7 +13,7 @@
 
 #include "multiboot.h"
 
-#define MAX_MEMORY_BLOCKS 3
+#define MAX_MEMORY_BLOCKS 10
 #define PAGE_SIZE 4096
 #define HEAP_SIZE (256 * 4096)
 

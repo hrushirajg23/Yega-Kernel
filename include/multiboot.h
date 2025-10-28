@@ -17,6 +17,9 @@
 extern uint8_t __kernel_start;
 extern uint8_t __kernel_end;
 
+#define MULTIBOOT_FLAG_MEM   (1 << 0)
+#define MULTIBOOT_FLAG_MMAP  (1 << 6)
+
 #define KERNEL_START ((uintptr_t)&__kernel_start)
 #define KERNEL_END ((uintptr_t)&__kernel_end)
 
