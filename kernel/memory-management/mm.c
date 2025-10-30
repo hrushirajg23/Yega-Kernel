@@ -14,7 +14,55 @@ struct page *mem_map = NULL;
 unsigned long swapper_pg_dir[PG_DIR_ENTRIES] __attribute__((aligned(4096)));
 
 struct phy_layout phy_layout;
+void print_mem_map(void);
 
+void *memcpy(void *dest, void *src, unsigned int size)
+{
+    char *psrc = (char*)src;
+    char *pdest = (char*)dest;
+    unsigned int iCnt = 0;
+    for ( iCnt = 0; iCnt < size; iCnt++ ){
+        pdest[iCnt] = psrc[iCnt];
+    }
+    return dest;
+
+}
+
+void copy_mem_map(void)
+{
+    int iCnt = 0;
+    unsigned long phy_addr = 0;
+    unsigned long phy_start = 0;
+    unsigned int page_req = 0;
+    page_req = ((sizeof(struct page)*phy_layout.totalram_pages) / PAGE_SIZE)+1;
+    serial_writestring("\npages req by mem_map are: ");
+    serial_writehex(page_req);
+    for ( iCnt = 0; iCnt < page_req; iCnt++ ){
+        phy_addr = get_free_page();
+        if( iCnt == 0 ){
+            phy_start = phy_addr;
+        }
+    }
+    memcpy((void*)phy_start, mem_map, (sizeof(struct page))*phy_layout.totalram_pages);
+
+    /* print_mem_map(); */
+    
+    kfree(mem_map);
+
+    mem_map = (struct page*)phy_start;
+
+    /* free the conventional_memory */
+
+    page_req = phy_layout.max_low_pfn;
+
+    for( iCnt = 0; iCnt < page_req; iCnt++ ){
+        CLEAR_FLAG(mem_map[iCnt].flags, PG_FLAG_TAKEN);
+        CLEAR_FLAG(mem_map[iCnt].flags, PG_FLAG_RESERVED);
+    }
+
+    /* print_mem_map(); */
+
+}
 
 void memset(void *addr, char val, unsigned int size)
 {
@@ -143,7 +191,7 @@ int create_mem_map(multiboot_info_t *mbi)
     serial_writehex(mem_map);
 
     for (iCnt = 0; iCnt < phy_layout.totalram_pages; iCnt++) {
-        mem_map[iCnt].flags = (PG_FLAG_TAKEN | PG_FLAG_RESERVED);
+        mem_map[iCnt].flags |= (PG_FLAG_TAKEN | PG_FLAG_RESERVED);
     }
 
 
@@ -195,9 +243,7 @@ int create_mem_map(multiboot_info_t *mbi)
         for( iCnt = page_start; iCnt <= page_end; iCnt++ ){
             mem_map[iCnt].flags &= ~PG_FLAG_TAKEN;
             mem_map[iCnt].flags &= ~PG_FLAG_RESERVED;
-
         }
-
     }
 
     print_mem_map();
@@ -240,7 +286,7 @@ void init_mem(multiboot_info_t *mbi)
 
     iRet = create_mem_map(mbi);
    
-    /* init_zone(&zone); */
+    init_zone(&zone);
    
     /* pgdir_entries = count_pgdir_entries(&zone); */
     /* setup_paging(&zone, pgdir_entries); */
@@ -248,5 +294,6 @@ void init_mem(multiboot_info_t *mbi)
         serial_writestring("create mem_map fail\n");
     }
     
+    copy_mem_map();
 }
 

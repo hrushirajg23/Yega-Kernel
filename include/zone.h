@@ -94,5 +94,6 @@ struct phy_layout {
 
 void machine_specific_memory_setup(multiboot_info_t *mbi, memory_blocks_t* blocks, int num_blocks);
 void enable_paging(unsigned long int);
+unsigned long get_free_page(void);
 
 #endif
