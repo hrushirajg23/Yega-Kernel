@@ -13,8 +13,10 @@
 struct page *mem_map = NULL;
 unsigned long swapper_pg_dir[PG_DIR_ENTRIES] __attribute__((aligned(4096)));
 
+zone_t zone;
 struct phy_layout phy_layout;
 void print_mem_map(void);
+extern unsigned long confirm_paging(void);
 
 void *memcpy(void *dest, void *src, unsigned int size)
 {
@@ -123,12 +125,19 @@ void init_page(struct page* page)
 
 void init_zone(zone_t *zone)
 {
+    register int iCnt = 0;
+    free_area_t *free_area = zone->free_area;
     zone->present_pages = phy_layout.totalram_pages;
-    /* zone->free_pages = PAGING_PAGES; */
+    for ( iCnt = 0; iCnt < zone->present_pages; iCnt++ ){
+        zone->free_pages++;
+    }
     zone->zone_mem_map = mem_map;
     zone->pages_min = ZONE_WATERMARK;
     zone->pages_low = ZONE_WATERMARK;
-    memset(zone->zone_mem_map, 0, phy_layout.totalram_pages*sizeof(struct page));
+    
+    for ( iCnt = 0; iCnt < BUDDY_GROUPS; iCnt++ ){
+        INIT_LIST_HEAD(&free_area[iCnt].free_list);
+    }
 }
 /*
  * this function calculates the number of 
@@ -148,10 +157,16 @@ unsigned long get_free_page(void)
     for (iCnt = 0; iCnt < phy_layout.totalram_pages; iCnt++){
         if(!(mem_map[iCnt].flags & PG_FLAG_TAKEN)){
             mem_map[iCnt].flags |= PG_FLAG_TAKEN;
-            return (unsigned long)iCnt * PAGE_SIZE;
+            return (unsigned long)(iCnt * PAGE_SIZE);
         }
     }
     return 0;
+}
+
+void release_page(unsigned long phy_addr)
+{
+    struct page *page = &zone.zone_mem_map[phy_addr/PAGE_SIZE];
+    CLEAR_FLAG(page->flags, PG_FLAG_TAKEN);
 }
 
 void print_mem_map(void)
@@ -193,8 +208,6 @@ int create_mem_map(multiboot_info_t *mbi)
     for (iCnt = 0; iCnt < phy_layout.totalram_pages; iCnt++) {
         mem_map[iCnt].flags |= (PG_FLAG_TAKEN | PG_FLAG_RESERVED);
     }
-
-
     
     /*
      * mem_map's data is present in the lower 640kb . Hence we don't want to wipe it off.
@@ -246,7 +259,7 @@ int create_mem_map(multiboot_info_t *mbi)
         }
     }
 
-    print_mem_map();
+    /* print_mem_map(); */
     return 1;
 }
 
@@ -254,27 +267,100 @@ unsigned int pgd_index(unsigned int phy_addr)
 {
     return (phy_addr/(PG_DIR_ENTRIES*PAGE_SIZE));
 }
+
+unsigned long test_mmu(void)
+{
+
+    unsigned long iRet = 0;
+    serial_writestring("\ntesting mmu \n");
+    unsigned long phy_addr = get_free_page();
+
+    serial_writehex(phy_addr);
+
+    serial_writestring("\n page no is  : \n");
+    serial_writehex(phy_addr/PAGE_SIZE);
+
+    struct page *page = &zone.zone_mem_map[phy_addr/PAGE_SIZE];
+    serial_writestring("page->flags : ");
+    if ( (page->flags & PG_FLAG_TAKEN) ){
+        serial_writestring("page is taken");
+        iRet = 1;
+    }
+    else{
+        serial_writestring("page is free\n");
+    }
+
+    release_page(phy_addr);
+    serial_writestring("after release page->flags : ");
+    if ( (page->flags & PG_FLAG_TAKEN) ){
+        serial_writestring("page is taken");
+    }
+    else{
+        iRet = 1;
+        serial_writestring("page is free\n");
+    }
+
+    return iRet;
+
+}
 /*
  * The pages containing page tables start at 1mb */
-void setup_paging(zone_t *zone, unsigned int pgdir_entries)
+void setup_paging(unsigned int pgdir_entries)
 {
-    register int iCnt = 0, jCnt = 0;     
+    register int iCnt = 0, jCnt = 0, kCnt = 0;     
     unsigned long phy_addr = 0x00000000;
     unsigned int pgd = pgd_index((unsigned int)PAGE_OFFSET);
     unsigned long temp_addr = 0;
-    unsigned long pg_ptr;
+    unsigned long *pg_ptr = NULL;
+    unsigned long total_ram = phy_layout.totalram_pages * PAGE_SIZE;
+
+    serial_writestring("\n pgd is : ");
+    serial_writehex(pgd);
     
     for (iCnt = 0; iCnt < pgdir_entries; iCnt++){
         temp_addr = get_free_page();
-        swapper_pg_dir[pgd+iCnt] = temp_addr;
-        pg_ptr = (temp_addr & 0xFFFFF000) | PG_PRESENT | PG_RW;
+        swapper_pg_dir[pgd+iCnt] = (temp_addr & 0xFFFFF000) | PG_PRESENT | PG_RW;
+        swapper_pg_dir[iCnt] = (temp_addr & 0xFFFFF000) | PG_PRESENT | PG_RW;
+        pg_ptr = (unsigned long*)temp_addr;    
+
+        serial_writestring("\npg_dir entry : ");
+        serial_writedec(iCnt);
+
+        serial_writestring("\npage_table address : ");
+        serial_writehex(pg_ptr);
         jCnt = 0;
-        while (phy_addr < (phy_layout.max_low_pfn * PAGE_SIZE)){
-            /* (unsigned long*)pg_ptr[jCnt++] = (phy_addr & 0xFFFFF000) | PG_PRESENT | PG_RW ; */
+        while (phy_addr < total_ram && jCnt < PG_TABLE_ENTRIES ){
+            pg_ptr[jCnt] = (phy_addr & 0xFFFFF000) | PG_PRESENT | PG_RW ;
+
+            serial_writestring("\npage_table_entry : ");
+            serial_writedec(jCnt);
+            serial_writestring("\t val: ");
+            serial_writehex(pg_ptr[jCnt]);
+            jCnt++;
             phy_addr += PAGE_SIZE;
         }
     }
+    serial_writestring("\nswapper_pg_dir addr is : ");
+    serial_writehex((unsigned long)swapper_pg_dir);
     enable_paging((unsigned long)swapper_pg_dir);
+
+    temp_addr = confirm_paging();
+    if ( ( temp_addr & 0x80000000 ) == 0x80000000 ){
+        serial_writestring("\npaging enabled, cr0:  ");
+        serial_writehex(temp_addr);
+    }
+    else{
+        serial_writestring("\n couldn't enable paging");
+        serial_writehex(temp_addr);
+    }
+
+    temp_addr = test_mmu();
+    if (temp_addr){
+        serial_writestring("\n mmu working \n");
+    }
+    else{
+        serial_writestring("\n mmu not working correctly \n");
+    }
 }
 
 void init_mem(multiboot_info_t *mbi)
@@ -282,18 +368,23 @@ void init_mem(multiboot_info_t *mbi)
     register int iCnt = 0, jCnt = 0; 
     unsigned int pgdir_entries = 0;
     int iRet = 0;
-    zone_t zone;
 
     iRet = create_mem_map(mbi);
-   
-    init_zone(&zone);
-   
-    /* pgdir_entries = count_pgdir_entries(&zone); */
-    /* setup_paging(&zone, pgdir_entries); */
     if(!iRet){
         serial_writestring("create mem_map fail\n");
+        return;
     }
-    
+
     copy_mem_map();
+
+    init_zone(&zone);
+
+    pgdir_entries = count_pgdir_entries(&zone);
+    serial_writestring("\npgdir_entires are : ");
+    serial_writehex(pgdir_entries);
+
+    setup_paging(pgdir_entries);
+
+    /* print_mem_map(); */
 }
 
