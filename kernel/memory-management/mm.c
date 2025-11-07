@@ -71,7 +71,7 @@ void memset(void *addr, char val, unsigned int size)
     char *ptr = (char*)addr;
     register int iCnt = 0;
     while (iCnt < size){
-        ptr[iCnt++]=val;
+        ptr[iCnt++] = val;
     }
 }
 
@@ -95,7 +95,7 @@ void print_machine_map(void)
 
 }
 
-void machine_specific_memory_setup(multiboot_info_t *mbi, memory_blocks_t* blocks, int num_blocks)
+void machine_specific_memory_setup (multiboot_info_t *mbi, memory_blocks_t* blocks, int num_blocks)
 {
     unsigned long total_ram_bytes = (mbi->mem_upper * 1024 + (1024 * 1024));  // mem_upper in KB
     unsigned long total_ram_pfn   = total_ram_bytes / PAGE_SIZE;
@@ -123,7 +123,7 @@ void init_page(struct page* page)
     memset(page, 0, sizeof(struct page));
 }
 
-void init_zone(zone_t *zone)
+void create_zone(zone_t *zone)
 {
     register int iCnt = 0;
     free_area_t *free_area = zone->free_area;
@@ -272,6 +272,8 @@ unsigned long test_mmu(void)
 {
 
     unsigned long iRet = 0;
+    struct page *page = NULL;
+
     serial_writestring("\ntesting mmu \n");
     unsigned long phy_addr = get_free_page();
 
@@ -280,7 +282,7 @@ unsigned long test_mmu(void)
     serial_writestring("\n page no is  : \n");
     serial_writehex(phy_addr/PAGE_SIZE);
 
-    struct page *page = &zone.zone_mem_map[phy_addr/PAGE_SIZE];
+    page = &zone.zone_mem_map[phy_addr/PAGE_SIZE];
     serial_writestring("page->flags : ");
     if ( (page->flags & PG_FLAG_TAKEN) ){
         serial_writestring("page is taken");
@@ -363,6 +365,7 @@ void setup_paging(unsigned int pgdir_entries)
     }
 }
 
+
 void init_mem(multiboot_info_t *mbi)
 {
     register int iCnt = 0, jCnt = 0; 
@@ -377,13 +380,15 @@ void init_mem(multiboot_info_t *mbi)
 
     copy_mem_map();
 
-    init_zone(&zone);
+    create_zone(&zone);
 
     pgdir_entries = count_pgdir_entries(&zone);
     serial_writestring("\npgdir_entires are : ");
     serial_writehex(pgdir_entries);
 
     setup_paging(pgdir_entries);
+
+    init_zone(&zone);
 
     /* print_mem_map(); */
 }
