@@ -6,7 +6,7 @@
  */
 
 #include <stdint.h>
-
+#include <stdarg.h>
 #include "io_access.h"
 #include "serial.h"
 
@@ -80,4 +80,74 @@ void serial_writehex(uint32_t num) {
     char c = hex_chars[(num >> i) & 0xF];
     serial_writechar(c);
   }
+}
+
+void serial_writedec(int num) {
+
+    char buf[16];
+    register int iCnt = 0;
+    if(num == 0){
+        serial_writestring("0");
+        return;
+    }
+
+    if ( num < 0 ){
+        serial_writestring("-");
+        num = -num;
+    }
+
+    while ( num > 0 ){
+        buf[iCnt++] = '0' + (num % 10);
+        num /= 10;
+    }
+    while ( iCnt-- ){
+        serial_writechar(buf[iCnt]);
+    }
+
+}
+
+void printk(const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+
+    char ch;
+    while ((ch = *format++) != '\0'){
+        if ( ch == '%' ){
+            switch(*format++){
+                case 'd':
+                    serial_writedec(va_arg(args, int));
+                    break;
+                case 'u':
+                    switch(*(format+1)){
+                        case 'l':
+                            serial_writedec(va_arg(args, unsigned long));
+                            break;
+                        default:
+                            serial_writedec(va_arg(args, unsigned int));
+                            break;
+                    }
+                case 'l':
+                    serial_writedec(va_arg(args, long));
+                    break;
+                case 's':
+                    serial_writestring(va_arg(args, char*));
+                    break;
+                case 'c':
+                    serial_writechar((char)va_arg(args, int));
+                    break;
+                case 'x':
+                    serial_writehex(va_arg(args, unsigned int));
+                    break;
+                case 'p':
+                    serial_writedec(va_arg(args, unsigned long));
+                    break;
+                default:
+                        serial_writechar('%');
+                        serial_writechar(*(format - 1));
+                        break;
+            }
+        }
+    }
+    va_end(args);
 }
