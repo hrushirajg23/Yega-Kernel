@@ -29,6 +29,7 @@ PIT_SRC         = pit/pit.c
 MANAGER_SRC     = kernel/memory-management/manager.c
 ALLOCATOR_SRC   = kernel/memory-management/allocator.c
 MM_SRC		= kernel/memory-management/mm.c 
+BUDDY_SRC 		= kernel/memory-management/buddy.c 
 PG_SRC 			= kernel/memory-management/page.asm
 LIST_SRC		= data_structures/list.c
 
@@ -52,6 +53,7 @@ OBJS = \
 	$(BUILD_DIR)/manager.o \
 	$(BUILD_DIR)/allocator.o \
 	$(BUILD_DIR)/mm.o \
+	$(BUILD_DIR)/buddy.o \
 	$(BUILD_DIR)/page.o \
 	$(BUILD_DIR)/list.o 
 
@@ -119,6 +121,9 @@ $(BUILD_DIR)/allocator.o: $(ALLOCATOR_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(BUILD_DIR)/mm.o: $(MM_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/buddy.o: $(BUDDY_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(BUILD_DIR)/list.o: $(LIST_SRC) | $(BUILD_DIR)
