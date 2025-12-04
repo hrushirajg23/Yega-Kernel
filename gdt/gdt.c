@@ -17,6 +17,8 @@ static void set_gdt_entry(int index, uint32_t base, uint32_t limit,
 static void fill_gdt(void);
 static inline void load_gdt(GDTPtr *gdt_descriptor);
 
+extern struct tss tss;
+
 GDTEntry gdt[GDT_SIZE];
 GDTPtr gdt_ptr;
 
@@ -48,6 +50,11 @@ static void fill_gdt(void) {
 
   // user data segment
   set_gdt_entry(4, 0, 0xFFFFF, 0xF2, 0xC);
+
+  //task state segment
+  //set_gdt_entry(5, (uint32_t)&tss, (uint32_t)sizeof(struct tss), 0x89, 0xC); 
+
+  //ldtr 
 }
 
 /* Initialize the GDT */
