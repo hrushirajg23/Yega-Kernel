@@ -9,6 +9,7 @@
 #include "mm.h"
 #include "manager.h"
 #include "allocator.h"
+#include "slab.h"
 
 struct page *mem_map = NULL;
 unsigned long swapper_pg_dir[PG_DIR_ENTRIES] __attribute__((aligned(4096)));
@@ -17,6 +18,30 @@ zone_t zone;
 struct phy_layout phy_layout;
 void print_mem_map(void);
 extern unsigned long confirm_paging(void);
+
+/*
+ * I've mapped 0xC0000000 similar to 0x00000000 entries
+ * Linux did the same thing, referred: understanding the linux kernel chapter 2
+ */
+/* struct page *virt_to_page(void *addr) */
+/* { */
+/*     unsigned int index; */
+/*     if ((unsigned long)addr < PAGE_OFFSET) */
+/*         index = ((unsigned long)addr) >> PAGE_SHIFT; */
+/*     else */
+/*         index = ((unsigned long)addr - PAGE_OFFSET) >> PAGE_SHIFT; */
+/*      serial_writestring("index of va to page is "); */
+/*      serial_writehex(index); */
+/*      serial_writestring("\n"); */
+/*     return &zone.zone_mem_map[index]; */
+/* } */
+
+
+unsigned long page_to_phys(struct page *page)
+{
+    unsigned long phy_addr = (page - page->zone->zone_mem_map)*PAGE_SIZE;
+    return phy_addr;
+}
 
 void *memcpy(void *dest, void *src, unsigned int size)
 {
@@ -134,6 +159,7 @@ void create_zone(zone_t *zone)
     zone->zone_mem_map = mem_map;
     zone->pages_min = ZONE_WATERMARK;
     zone->pages_low = ZONE_WATERMARK;
+    zone->zone_start_pfn = 0; //0 since I have only single zone for now
     
     for ( iCnt = 0; iCnt < BUDDY_GROUPS; iCnt++ ){
         INIT_LIST_HEAD(&free_area[iCnt].free_list);
@@ -207,6 +233,7 @@ int create_mem_map(multiboot_info_t *mbi)
 
     for (iCnt = 0; iCnt < phy_layout.totalram_pages; iCnt++) {
         mem_map[iCnt].flags |= (PG_FLAG_TAKEN | PG_FLAG_RESERVED);
+        mem_map[iCnt].page_no = iCnt;
     }
     
     /*
@@ -279,11 +306,13 @@ unsigned long test_mmu(void)
 
     serial_writehex(phy_addr);
 
-    serial_writestring("\n page no is  : \n");
+    *(unsigned long*)phy_addr = 0x5555;
+
+    serial_writestring("\n page no is  : ");
     serial_writehex(phy_addr/PAGE_SIZE);
 
     page = &zone.zone_mem_map[phy_addr/PAGE_SIZE];
-    serial_writestring("page->flags : ");
+    serial_writestring("\npage->flags : ");
     if ( (page->flags & PG_FLAG_TAKEN) ){
         serial_writestring("page is taken");
         iRet = 1;
@@ -292,7 +321,23 @@ unsigned long test_mmu(void)
         serial_writestring("page is free\n");
     }
 
+    
+    /*
+     * Below code gives the proof that mmu is working correctly 
+     * i.e translation HIGH addresses from 0xC0000000 correctly 
+     */
+    void *ptr = ((void*)(PAGE_OFFSET + phy_addr));
+    serial_writestring("\nva value is ");
+    serial_writehex(*(unsigned int*)ptr);
+    serial_writestring("\n");
+
+    ptr = ((void*)phy_addr);
+    serial_writestring("\npa value is ");
+    serial_writehex(*(unsigned int*)ptr);
+    serial_writestring("\n");
+
     release_page(phy_addr);
+
     serial_writestring("after release page->flags : ");
     if ( (page->flags & PG_FLAG_TAKEN) ){
         serial_writestring("page is taken");
@@ -301,7 +346,20 @@ unsigned long test_mmu(void)
         iRet = 1;
         serial_writestring("page is free\n");
     }
+    /* below two functions should produce the same 
+     * result i.e page number 
+     */
+    /*        ------------------------ */
+    page = virt_to_page((void*)0xC0002001);
+    serial_writestring("va to page is ");
+    serial_writehex(page->page_no);
+    serial_writestring("\n");
 
+    page = phys_to_page((unsigned long)0x00002001);
+    serial_writestring("pa to page is ");
+    serial_writehex(page->page_no);
+    serial_writestring("\n");
+    /*        ------------------------ */
     return iRet;
 
 }
@@ -389,6 +447,10 @@ void init_mem(multiboot_info_t *mbi)
     setup_paging(pgdir_entries);
 
     init_zone(&zone);
+
+    test_slab();
+
+    show_buddy(&zone);
 
     /* print_mem_map(); */
 }
