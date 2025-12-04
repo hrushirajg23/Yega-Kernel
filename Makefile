@@ -32,6 +32,7 @@ MM_SRC		= kernel/memory-management/mm.c
 BUDDY_SRC 		= kernel/memory-management/buddy.c 
 PG_SRC 			= kernel/memory-management/page.asm
 LIST_SRC		= data_structures/list.c
+SLAB_SRC		= kernel/memory-management/slab.c
 
 # === Objects ===
 OBJS = \
@@ -55,7 +56,7 @@ OBJS = \
 	$(BUILD_DIR)/mm.o \
 	$(BUILD_DIR)/buddy.o \
 	$(BUILD_DIR)/page.o \
-	$(BUILD_DIR)/list.o 
+	$(BUILD_DIR)/list.o $(BUILD_DIR)/slab.o
 
 # === Default ===
 all: $(BUILD_DIR)/yegaos.iso check
@@ -127,6 +128,9 @@ $(BUILD_DIR)/buddy.o: $(BUDDY_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(BUILD_DIR)/list.o: $(LIST_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/slab.o: $(SLAB_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 
