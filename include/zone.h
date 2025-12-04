@@ -43,6 +43,7 @@
 #define PG_FLAG_reclaim 1<<5
 #define PG_FLAG_TAKEN 1<<6
 #define PG_FLAG_RESERVED 1<<7
+#define PG_FLAG_slab 1<<8
 
 /* Hardware flags */
 #define PG_PRESENT 1<<0
@@ -53,17 +54,21 @@
 
 #define PAGE_OFFSET 0xC0000000
 #define ZONE_HIGH_MEM 0x38000000  // 896MB
+#define PAGE_SHIFT 12
                                     
 #define ZONE_WATERMARK 10
 typedef unsigned long phys_addr_t;
 
+struct zone;
 struct page{
+    struct zone *zone;
     unsigned int page_no; //for testing
     unsigned int flags;
     unsigned int ref_cnt;
     unsigned int _map_count; // number of page table entries that refer to the page 
     unsigned int private; //use by buddy to keep order 
     struct list_head lru;
+    struct page *first_page; //compound page i.e pointer to the first page in group when allocated to a slab
 };
 
 typedef struct {
@@ -71,11 +76,12 @@ typedef struct {
     unsigned long nr_free; //number of free groups in the order lane
 }free_area_t;
 
-typedef struct {
+typedef struct zone {
     unsigned long free_pages; 
     unsigned long present_pages;
     unsigned long pages_min; //min no of pages to be reserved
     unsigned long pages_low; //watermark to initiate the page fram reclaiming algo
+    unsigned long zone_start_pfn; //index of the first page frame of the zone
     struct page* zone_mem_map;
     free_area_t free_area[BUDDY_GROUPS];
     char *name;
@@ -96,5 +102,21 @@ void machine_specific_memory_setup(multiboot_info_t *mbi, memory_blocks_t* block
 void enable_paging(unsigned long int);
 unsigned long get_free_page(void);
 void init_zone(zone_t *);
+struct page *virt_to_page(void *);
+struct page *alloc_pages(int , short );
+void free_pages(struct page *, short );
+void ClearPageSlab(struct page *);
+void SetPageSlab(struct page *);
+unsigned long page_to_phys(struct page *);
+void show_buddy(zone_t *zone);
+
+
+
+
+
+#define ZONE_DMA 1 << 29
+#define ZONE_NORMAL 1 << 30
+#define ZONE_HIGHMEM 1 << 31
+
 
 #endif
