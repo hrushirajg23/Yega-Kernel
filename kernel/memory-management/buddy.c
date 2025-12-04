@@ -3,6 +3,7 @@
 #include "serial.h"
 #include "mm.h"
 
+extern zone_t zone;
 
 void free_buddy_system(zone_t* zone)
 {
@@ -56,9 +57,19 @@ void ClearPagePrivate(struct page *page)
     page->flags &= ~PG_FLAG_private;
 }
 
+void ClearPageSlab(struct page *page)
+{
+    page->flags &= ~PG_FLAG_slab;
+}
+
 void SetPagePrivate(struct page *page)
 {
     page->flags |= PG_FLAG_private;
+}
+
+void SetPageSlab(struct page *page)
+{
+    page->flags |= PG_FLAG_slab;
 }
 
 struct page *allocate_block(zone_t *zone, short order)
@@ -101,6 +112,14 @@ block_found:
     }
     return page;
 }
+struct page *alloc_pages(int flags, short order)
+{
+    /*
+     * Complete the hot and cold cache method here
+     */
+    return allocate_block(&zone, order);
+}
+
 
 int PagePrivate(struct page *page)
 {
@@ -118,6 +137,8 @@ static inline int page_is_buddy(struct page *buddy, short order)
     return 0;
 }
 
+
+
 void free_block(struct page *page, zone_t *zone, short order)
 {
     struct page *base = zone->zone_mem_map;
@@ -134,9 +155,9 @@ void free_block(struct page *page, zone_t *zone, short order)
         if(!page_is_buddy(buddy, order)){
             break;
         }
-        serial_writestring(" found buddy at page ");
-       serial_writedec( buddy->page_no);
-       serial_writestring("\n");
+        /* serial_writestring(" found buddy at page "); */
+        serial_writedec( buddy->page_no);
+        serial_writestring("\n");
         list_del(&buddy->lru);
         zone->free_area[order].nr_free--;
         ClearPagePrivate(buddy);
@@ -152,7 +173,10 @@ void free_block(struct page *page, zone_t *zone, short order)
     zone->free_area[order].nr_free++;
 
 }
-
+void free_pages(struct page *page, short order)
+{
+    free_block(page, page->zone, order);
+}
 int order (int num)
 {
     int iOrder = 0;
@@ -181,33 +205,11 @@ void break_block (struct page *prev, struct page *curr, zone_t *zone)
     int iFit = fit_to_possible(diff);
 
     if (iFit != diff){
-        serial_writestring(" iFit != diff \n iFit: ");
-        serial_writedec(iFit);
-        serial_writestring("diff: ");
-        serial_writedec(diff);
-        serial_writestring("\n");
-        serial_writestring("prev : ");
-        serial_writehex(prev);
-        serial_writestring("\n");
-        serial_writestring("curr: ");
-        serial_writehex(curr);
-        serial_writestring("\n");
         break_block(prev + iFit, curr, zone);
         break_block(prev, prev + iFit - 1, zone);
         return;
     }
-        serial_writestring(" iFit = diff \n iFit: ");
-        serial_writedec(iFit);
-        serial_writestring("diff: ");
-        serial_writedec(diff);
-        serial_writestring("\n");
-        serial_writestring("prev : ");
-        serial_writehex(prev);
-        serial_writestring("\n");
-        serial_writestring("curr: ");
-        serial_writehex(curr);
-
-        free_block(prev , zone, order(iFit)-1);
+    free_block(prev , zone, order(iFit)-1);
 }
 
 void test_buddy(zone_t *zone)
@@ -226,10 +228,11 @@ void test_buddy(zone_t *zone)
     serial_writestring("showing buddy after free_block 2 \n");
     show_buddy(zone);
 
-
     free_block(page1, zone, 8);
     serial_writestring("showing buddy after free_block 1 \n");
     show_buddy(zone);
+
+
 }
 
 
@@ -243,6 +246,7 @@ void init_zone(zone_t *zone)
      
     for(iCnt = 0; iCnt < zone->present_pages; iCnt++){
         zone->zone_mem_map[iCnt].page_no = iCnt; 
+        zone->zone_mem_map[iCnt].zone = zone;
         INIT_LIST_HEAD(&zone->zone_mem_map[iCnt].lru);
     }
     page = zone->zone_mem_map;
