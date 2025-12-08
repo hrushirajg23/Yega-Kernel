@@ -21,6 +21,6 @@ typedef struct heap_block {
 } heap_block_t;
 
 void *kalloc(size_t req);
-void kfree(void *ptr);
+void kbfree(void *ptr);
 
 #endif
