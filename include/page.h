@@ -9,7 +9,13 @@ extern struct page *mem_map;
 
 #define __phys_addr(x)       ((x) - PAGE_OFFSET)	
 
-#define __pa(x)             __phys_addr((unsigned long)(x))
+// #define __pa(x)              __phys_addr((unsigned long)(x))
+
+#define __pa(x) \
+    (((unsigned long)(x) >= PAGE_OFFSET) ? \
+     __phys_addr((unsigned long)(x)) : \
+     (unsigned long)(x))
+
 #define __va(x)             ((void *)((unsigned long)(x) + PAGE_OFFSET))
 
 #define pfn_to_page(pfn) (mem_map + ((pfn) - zone.zone_start_pfn))
