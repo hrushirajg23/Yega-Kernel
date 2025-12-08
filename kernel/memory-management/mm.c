@@ -74,7 +74,7 @@ void copy_mem_map(void)
 
     /* print_mem_map(); */
     
-    kfree(mem_map);
+    kbfree(mem_map);
 
     mem_map = (struct page*)phy_start;
 

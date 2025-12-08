@@ -91,7 +91,7 @@ static int test_allocator() {
     arr2[i] = i + 100;
 
   // free the first array
-  kfree(arr1);
+  kbfree(arr1);
 
   // Allocate third array
   int *arr3 = (int *)kalloc(8 * sizeof(int));

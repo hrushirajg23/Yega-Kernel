@@ -72,7 +72,7 @@ void kmem_cache_init(kmem_cache_t *cachep, const char *name, size_t objsize,
                      void (*ctor)(void *, kmem_cache_t *, unsigned long),
                      void (*dtor)(void *, kmem_cache_t *, unsigned long));
 
-void cache_estimate(unsigned long gfporder, unsigned int objsize, unsigned int align, int flags, unsigned int * left_over, unsigned int *num);
+void cache_estimate(int gfporder, unsigned int objsize, unsigned int align, int flags, unsigned int * left_over, unsigned int *num);
 
 kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align, 
         unsigned int flags,void (*ctor)(void *, kmem_cache_t *, unsigned long));

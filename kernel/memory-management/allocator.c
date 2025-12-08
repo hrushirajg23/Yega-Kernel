@@ -51,8 +51,10 @@ void *kalloc(size_t req) {
   return (void *)(curr + 1);
 }
 
-/* Free memory */
-void kfree(void *ptr) {
+/* Free memory 
+ * kernel bump free
+ */
+void kbfree(void *ptr) {
   if (!ptr)
     return;
 
