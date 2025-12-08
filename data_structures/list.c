@@ -32,7 +32,7 @@ void list_add(struct list_head *head, struct list_head *new)
 }
 void list_add_tail(struct list_head *head, struct list_head *new)
 {
-    generic_add(head->next, new, head);
+    generic_add(head->prev, new, head);
 }
 
 void list_del(struct list_head* entry)
