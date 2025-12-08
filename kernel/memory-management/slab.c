@@ -78,7 +78,7 @@ static inline void page_set_cache(struct page *page, struct kmem_cache *cachep)
 
 static inline struct kmem_cache *page_get_cache(struct page *page)
 {
-	/* page = compound_head(page); */
+	page = compound_head(page);
 	return (struct kmem_cache *)page->lru.next;
 }
 
@@ -117,6 +117,10 @@ void *kmem_getpages(kmem_cache_t *cachep, int flags)
     struct page *temp = NULL;
     int i = 0;
 
+    serial_writestring("kmem_getpages called for : ");
+    serial_writehex(cachep->gfporder);
+    serial_writestring("\n");
+
     flags |= cachep->gfpflags;
     page = alloc_pages(flags, cachep->gfporder);
     if (!page)
@@ -143,6 +147,13 @@ void kmem_freepages(kmem_cache_t *cachep, void *addr)
     /*
      * reclaim code
      */
+
+    serial_writestring("freeing address : ");
+    serial_writehex(addr);
+    serial_writestring("\n");
+    serial_writestring("freeing page no: ");
+    serial_writehex(page->page_no);
+    serial_writestring("\n");
     struct page *temp = page;
     while (i--)
         ClearPageSlab(temp++);
@@ -257,6 +268,7 @@ void kmem_cache_init(kmem_cache_t *cachep, const char *name, size_t objsize,
     cachep->colour = left_over / cachep->colour_off;
     cachep->colour_next = 0;
     cachep->slab_size = ALIGN(sizeof(slab_t), cache_line_size());
+    cachep->free_limit = cachep->num;
 
     sizes = malloc_sizes;
     names = cache_names;
@@ -264,7 +276,7 @@ void kmem_cache_init(kmem_cache_t *cachep, const char *name, size_t objsize,
      * Now below we create the general geometric size caches
      * 32 to 131,072 
      */
-    
+   
     for (i = 0; i < MALLOC_SIZES_COUNT; i++) {
         sizes[i].cs_cachep = kmem_cache_create(names->name, sizes->cs_size, KMALLOC_MINALIGN, KMALLOC_FLAGS, NULL); 
         if (!sizes[i].cs_cachep) {
@@ -276,12 +288,12 @@ void kmem_cache_init(kmem_cache_t *cachep, const char *name, size_t objsize,
         if (i == 0)
             break;
     }
-    for (i = 0; i < MALLOC_SIZES_COUNT; i++) {
-        kmem_cache_free(&cache_cache, sizes[i].cs_cachep);
+    /* for (i = 0; i < MALLOC_SIZES_COUNT; i++) { */
+    /*     kmem_cache_free(&cache_cache, sizes[i].cs_cachep); */
 
-        if (i == 0)
-            break;
-    }
+    /*     if (i == 0) */
+    /*         break; */
+    /* } */
 }
 
 static size_t slab_mgmt_size(size_t align)
@@ -289,11 +301,17 @@ static size_t slab_mgmt_size(size_t align)
 	return ALIGN(sizeof(struct slab_s), align);
 }
 
-void cache_estimate(unsigned long gfporder, unsigned int objsize, unsigned int align, int flags, unsigned int * left_over, unsigned int *num)
+void cache_estimate(int gfporder, unsigned int objsize, unsigned int align, int flags, unsigned int * left_over, unsigned int *num)
 {
     int nr_objs;
     unsigned int mgmt_size;
     unsigned int slab_size = PAGE_SIZE << gfporder;
+
+    serial_writestring("\ncache estimation gfp order: \n");
+    serial_writehex(gfporder);
+    serial_writestring("\nobjsize: \n");
+    serial_writehex(objsize);
+
 
     if (flags & CFLGS_OFF_SLAB){
         mgmt_size = 0;
@@ -312,6 +330,9 @@ void cache_estimate(unsigned long gfporder, unsigned int objsize, unsigned int a
 
         mgmt_size = slab_mgmt_size(align);
     }
+    serial_writestring("\n nr_objs: \n");
+    serial_writehex(nr_objs);
+
     *num = nr_objs;
     *left_over = slab_size - nr_objs*objsize - mgmt_size;
 }
@@ -321,20 +342,47 @@ void cache_init_objs(kmem_cache_t *cachep, slab_t *slabp)
     slabp->free_list = NULL;
 
     char *ptr = (char*)slabp->s_mem;
-    
+     serial_writestring("slab s_mem is\n");
+    serial_writehex(slabp->s_mem);
+    serial_writestring("\n");   
+    serial_writestring("number of objects are \n");
+    serial_writedec(cachep->num);
+    serial_writestring("\n");
+    serial_writestring("object size: ");
+    serial_writedec(cachep->objsize);
+    serial_writestring("\n");
+    serial_writestring("cachep->name: ");
+    serial_writestring(cachep->name);
+    serial_writestring("\n");
+
     for (int i = cachep->num; i >= 0; i--){
         void *objp = ptr + i * cachep->objsize;
         /* now we form a free list by inserting 
          * value of next free node into prev node
          */
         /* obj0 -> obj1 -> .. -> NULL */
+
+        /* serial_writestring("object no: "); */
+        /* serial_writedec(i); */
+        /* serial_writestring("\n"); */
+        /* serial_writestring("objp : "); */
+        /* serial_writehex(objp); */
+        /* serial_writestring("\n"); */
+
         *(void **)objp = slabp->free_list;
+        /* serial_writestring("*objp is : "); */
+        /* serial_writehex(*(void **)objp); */
+        /* serial_writestring("\n"); */
+
         slabp->free_list = objp;
         if (cachep->ctor){
             (cachep->ctor)(objp, cachep, 0);
         }
-
     }
+
+    serial_writestring("after init objs free list points to : ");
+    serial_writehex(slabp->free_list);
+    serial_writestring("\n");
 }
 
 /*
@@ -462,6 +510,12 @@ void *slab_get_obj(kmem_cache_t *cachep, struct slab_s *slabp)
 {
     void *objp;
     objp = slabp->free_list;
+    serial_writestring("in slab_get_obj free_list points to :");
+    serial_writehex(slabp->free_list);
+    serial_writestring("\n");
+    serial_writestring("in slab_get_obj objp points to :");
+    serial_writehex(objp);
+    serial_writestring("\n");
     slabp->free_list = *(void **)objp;
 
     /*
@@ -499,9 +553,56 @@ void slab_destroy(kmem_cache_t* cachep, slab_t *slabp)
         }
     }
     kmem_freepages(cachep, slabp->s_mem - slabp->colouroff);
-    /* if (cachep->flags & CFLGS_OFF_SLAB) */
-    /*     kmem_cache_free(cachep->slabp_cache, slabp); */
+    if (cachep->flags & CFLGS_OFF_SLAB)
+        kmem_cache_free(cachep->slabp_cache, slabp);
 
+}
+
+void display_slab(struct slab_s *slabp)
+{
+    serial_writestring("displaying slab info\n");
+    serial_writestring("colour off is : ");
+    serial_writehex(slabp->colouroff);
+    serial_writestring("\n");
+    serial_writestring("s_mem is : ");
+    serial_writehex(slabp->s_mem);
+    serial_writestring("\n");
+    serial_writestring("in_use : ");
+    serial_writehex(slabp->inuse);
+    serial_writestring("\n");
+    serial_writestring("free_list is : ");
+    serial_writehex(slabp->free_list);
+    serial_writestring("\n");
+
+}
+
+void display_kmemlist(kmem_cache_t *cachep)
+{
+    struct kmem_list3 *l3 = &cachep->lists;
+    struct list_head *run;
+    struct slab_s *slabp;
+    
+    serial_writestring("displaying lists for cache : ");
+    serial_writestring(cachep->name);
+    serial_writestring("\n");
+    
+    serial_writestring("=== Partial Slabs ===\n");
+    list_for_each(run, &l3->slabs_partial) {
+        slabp = list_entry(run, struct slab_s, list); 
+        display_slab(slabp);
+    }
+    
+    serial_writestring("=== Full Slabs ===\n");
+    list_for_each(run, &l3->slabs_full) {
+        slabp = list_entry(run, struct slab_s, list); 
+        display_slab(slabp);
+    }
+    
+    serial_writestring("=== Free Slabs ===\n");
+    list_for_each(run, &l3->slabs_free) {
+        slabp = list_entry(run, struct slab_s, list); 
+        display_slab(slabp);
+    }
 }
 
 void *cache_alloc_refill(kmem_cache_t *cachep, unsigned int flags)
@@ -514,13 +615,18 @@ void *cache_alloc_refill(kmem_cache_t *cachep, unsigned int flags)
     struct list_head *entry;
     struct slab_s *slabp;
 
+    serial_writestring("\n***************** cache-alloc-refill for cache: ");
+    serial_writehex(cachep);
+    serial_writestring("*****************\n");
 
+    
+    display_kmemlist(cachep);
     entry = l3->slabs_partial.next;
     if (entry == &l3->slabs_partial){
         entry = l3->slabs_free.next;
         if (entry == &l3->slabs_free){
             /* goto must_grow; */
-      
+            serial_writestring("slab partial is empty  and slab_free too \n");     
             serial_writestring("must grow \n");
             x = cache_grow(cachep, flags, objp);
             if (!x)
@@ -540,11 +646,19 @@ void *cache_alloc_refill(kmem_cache_t *cachep, unsigned int flags)
         list_add(&l3->slabs_partial, &slabp->list);
 
     }
+    else {
+
+        serial_writestring("slab partial is not empty \n");
+    }
+ 
+
+    slabp = list_entry(entry, struct slab_s, list);
 
     /*
      * take an object from the partial list 
      */
      
+    
     objp = slab_get_obj(cachep, slabp);    
     /* partial slab list may have some slabs
      * check if they have some free objects
@@ -555,6 +669,7 @@ void *cache_alloc_refill(kmem_cache_t *cachep, unsigned int flags)
      */
      
 
+    display_kmemlist(cachep);
     
     /* slabp = list_entry(entry, struct slab, list); */
     /* list_del(&slabp->list); */
@@ -642,17 +757,18 @@ void kmem_cache_free(kmem_cache_t *cachep, void *objp)
          */
 			if (l3->free_objects > cachep->free_limit) {
 				l3->free_objects -= cachep->num;
+                serial_writestring("destroying slab\n");
 					slab_destroy(cachep, slabp);
 			} else {
 				list_add(&l3->slabs_free, &slabp->list);
 			}
-		} else {
+    } else {
 			/* Unconditionally move a slab to the end of the
 			 * partial list on free - maximum time for the
 			 * other objects to be freed, too.
 			 */
-			list_add_tail(&l3->slabs_partial ,&slabp->list);
-		}
+			/* list_add_tail(&l3->slabs_partial ,&slabp->list); */
+    }
 }
 
 
@@ -679,8 +795,12 @@ static size_t calculate_slab_order(kmem_cache_t *cachep, size_t size,
     for (gfporder = 0; gfporder <= KMALLOC_MAX_ORDER; gfporder++) {
 
         cache_estimate(gfporder, size, align, flags, &remainder, &num);
-        if (!num)
+        serial_writestring("cache_estimate result is : ");
+        serial_writehex(num);
+        serial_writestring("\n");
+        if (!num){
             continue;
+        }
 
         if (flags & CFLGS_OFF_SLAB) {
             offslab_limit = size - sizeof(struct slab_s);
@@ -688,17 +808,29 @@ static size_t calculate_slab_order(kmem_cache_t *cachep, size_t size,
             if (num > offslab_limit)
                break; 
         }
+        break; 
+
     }
     cachep->num = num;
     cachep->gfporder = gfporder;
     left_over = remainder;
+    serial_writestring("calculating slab order, no of objects are : ");
+    serial_writehex(cachep->num);
+    serial_writestring("\norder is : ");
+    serial_writehex(cachep->gfporder);
+    serial_writestring("\nleft over is : ");
+    serial_writehex(left_over);
+
     return left_over;
 }
 
 kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align, 
         unsigned int flags,void (*ctor)(void *, kmem_cache_t *, unsigned long))
 {
-    serial_writestring("\ninside kmem_cache_create \n");
+    serial_writestring("\ninside kmem_cache_create for \n");
+    serial_writestring(name);
+    serial_writestring("\n");
+    
     size_t left_over, slab_size;
     size_t ralign; //required alignment
     kmem_cache_t *cachep = NULL, *pc = NULL;
@@ -738,6 +870,7 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align,
     serial_writehex(cachep);
     serial_writestring("\n");
 
+    kmem_list3_init(&cachep->lists);
     cachep->objsize = size;
     size = ALIGN(size, align);
 
@@ -746,12 +879,15 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align,
     serial_writehex(left_over);
     serial_writestring("\n");
 
+
+
     if (!cachep->num) {
         serial_writestring("\nkmem_cache_create: couldn't create cache \n");
 		kmem_cache_free(&cache_cache, cachep);
 		cachep = NULL;
 		goto oops;
 	}
+    cachep->free_limit = cachep->num;
     
     if (flags & CFLGS_OFF_SLAB)
         slab_size = sizeof(struct slab_s);
@@ -784,10 +920,60 @@ oops:
 
 }
 
+void * kmalloc(size_t size, int flags)
+{
+    struct cache_sizes *csizep = malloc_sizes;
+    kmem_cache_t *cachep;
+
+    for (; csizep->cs_size; csizep++) {
+        /*
+         * malloc_sizes table to locate the nearest power-of-2 size 
+         * to the requested size
+         */
+        if (size > csizep->cs_size)
+            continue;
+        
+        serial_writestring("close matching size is : ");
+        serial_writehex(csizep->cs_size);
+        serial_writestring("\n");
+        cachep = csizep->cs_cachep;
+        return kmem_cache_alloc(cachep, flags);
+    }
+
+    return NULL;
+}
+
+void kfree(const void *objp)
+{
+    kmem_cache_t *cachep;
+    unsigned int flags;
+
+    if (!objp)
+        return;
+
+    cachep = (kmem_cache_t*)(virt_to_page(objp)->lru.next);
+    kmem_cache_free(cachep, (void*)objp);
+}
+
 void test_slab(void)
 {
+    struct page *page = virt_to_page((void*)0x00001001);
+    serial_writestring("my page is : ");
+    serial_writehex(page->page_no);
+    serial_writestring("\n");
+
     kmem_cache_init(&cache_cache, "kmem_cache", sizeof(struct kmem_cache), NULL, NULL);
 
+    void *ptr1 = kmalloc(20, 0);
+    if (!ptr1)
+        serial_writestring("kmalloc failed\n");
+    /* kfree(ptr); */
+
+    void *ptr2 = kmalloc(20, 0);
+    if (!ptr2)
+        serial_writestring("kmalloc failed\n");
+    kfree(ptr1);
+    kfree(ptr2);
 
     
 }
