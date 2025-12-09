@@ -349,7 +349,7 @@ void cache_init_objs(kmem_cache_t *cachep, slab_t *slabp)
     serial_writestring(cachep->name);
     serial_writestring("\n");
 
-    for (int i = cachep->num; i >= 0; i--){
+    for (int i = cachep->num-1; i >= 0; i--){
         void *objp = ptr + i * cachep->objsize;
         /* now we form a free list by inserting 
          * value of next free node into prev node
@@ -428,11 +428,14 @@ static struct slab_s *alloc_slabmgmt(kmem_cache_t *cachep, void *objp,
         slabp = objp + colour_off;
         colour_off += cachep->slab_size;
     }
+    INIT_LIST_HEAD(&slabp->list);
     slabp->inuse = 0;
 	slabp->colouroff = colour_off;
 	slabp->s_mem = objp + colour_off;
 	slabp->free = 0;
     slabp->free_list = NULL;
+
+    return slabp;
 
 }
 /*
@@ -517,8 +520,10 @@ void *slab_get_obj(kmem_cache_t *cachep, struct slab_s *slabp)
      * move it to full list.
      * its a human's responsibility to clean his shit
      */
-    if (slabp->free_list == NULL)
+    if (slabp->free_list == NULL){
+        list_del(&slabp->list);
         list_add(&cachep->lists.slabs_full, &slabp->list);
+    }
 
     slabp->inuse++;
     return objp;
@@ -528,13 +533,10 @@ void *slab_get_obj(kmem_cache_t *cachep, struct slab_s *slabp)
 void slab_put_obj(kmem_cache_t *cachep, struct slab_s *slabp,
         void *objp)
 {
+    struct kmem_list3 *l3 = &cachep->lists;
     *(void **)objp = slabp->free_list;
     slabp->free_list = objp;
     slabp->inuse--;
-    /*
-     * should you put the slab in slabs_free if
-     * all of its objects become free ?
-     */
 }
 
 void slab_destroy(kmem_cache_t* cachep, slab_t *slabp)
@@ -761,7 +763,11 @@ void kmem_cache_free(kmem_cache_t *cachep, void *objp)
 			 * partial list on free - maximum time for the
 			 * other objects to be freed, too.
 			 */
-			/* list_add_tail(&l3->slabs_partial ,&slabp->list); */
+        /*
+         * slab might be on the slab_full list, hence move 
+         * it to partial list
+         */
+        list_add_tail(&l3->slabs_partial ,&slabp->list);
     }
 }
 
