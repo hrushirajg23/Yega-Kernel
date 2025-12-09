@@ -40,6 +40,7 @@ struct cache_sizes malloc_sizes[] = {
     CACHE(65536)
     CACHE(131072)
 	/* CACHE(ULONG_MAX) */
+    { .cs_size = 0 } //sentinel value to stop loop
 #undef CACHE
 };
 
@@ -277,23 +278,16 @@ void kmem_cache_init(kmem_cache_t *cachep, const char *name, size_t objsize,
      * 32 to 131,072 
      */
    
-    for (i = 0; i < MALLOC_SIZES_COUNT; i++) {
-        sizes[i].cs_cachep = kmem_cache_create(names->name, sizes->cs_size, KMALLOC_MINALIGN, KMALLOC_FLAGS, NULL); 
+    for (i = 0; sizes[i].cs_size != 0; i++) {
+        sizes[i].cs_cachep = kmem_cache_create(names[i].name, sizes[i].cs_size, KMALLOC_MINALIGN, KMALLOC_FLAGS, NULL); 
         if (!sizes[i].cs_cachep) {
             serial_writestring("\nkmem_cache_create failed for i ");
             serial_writedec(i);
             break;
         }
 
-        if (i == 0)
-            break;
-    }
-    /* for (i = 0; i < MALLOC_SIZES_COUNT; i++) { */
-    /*     kmem_cache_free(&cache_cache, sizes[i].cs_cachep); */
+     }
 
-    /*     if (i == 0) */
-    /*         break; */
-    /* } */
 }
 
 static size_t slab_mgmt_size(size_t align)
@@ -974,6 +968,31 @@ void test_slab(void)
         serial_writestring("kmalloc failed\n");
     kfree(ptr1);
     kfree(ptr2);
+
+    cache_sizes_t *sizes;
+    struct cache_names *names;
+
+    sizes = malloc_sizes;
+
+    ptr1 = kmalloc(56, 0);
+    if (!ptr1)
+        serial_writestring("kmalloc failed\n");
+    ptr2 = kmalloc(53, 0);
+    if (!ptr2)
+        serial_writestring("kmalloc failed\n");
+
+    serial_writestring("------------------------------------------------------------------\n");
+    serial_writehex(ptr1);
+    serial_writestring("\n");
+    serial_writehex(ptr2);
+    serial_writestring("\n");
+    kfree(ptr2);
+    kfree(ptr1);
+
+
+    /* for (int i = 0; i < MALLOC_SIZES_COUNT; i++) { */
+    /*     kmem_cache_free(&cache_cache, sizes[i].cs_cachep); */
+    /* } */
 
     
 }
