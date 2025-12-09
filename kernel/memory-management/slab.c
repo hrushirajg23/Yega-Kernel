@@ -515,17 +515,7 @@ void *slab_get_obj(kmem_cache_t *cachep, struct slab_s *slabp)
     serial_writestring("\n");
     slabp->free_list = *(void **)objp;
 
-    /*
-     * now if slab's all objects are allocated
-     * move it to full list.
-     * its a human's responsibility to clean his shit
-     */
-    if (slabp->free_list == NULL){
-        list_del(&slabp->list);
-        list_add(&cachep->lists.slabs_full, &slabp->list);
-    }
-
-    slabp->inuse++;
+   slabp->inuse++;
     return objp;
 
 }
@@ -663,7 +653,16 @@ void *cache_alloc_refill(kmem_cache_t *cachep, unsigned int flags)
      * If the slabs_free list is also empty
      * invoke cache_grow().
      */
-     
+
+    /*
+     * now if slab's all objects are allocated
+     * move it to full list.
+     * its a human's responsibility to clean his shit
+     */
+    if (slabp->free_list == NULL) {
+        list_del(&slabp->list);
+        list_add(&cachep->lists.slabs_full, &slabp->list);
+    }
 
     display_kmemlist(cachep);
     
@@ -678,29 +677,6 @@ void *cache_alloc_refill(kmem_cache_t *cachep, unsigned int flags)
      * Now we remove it because its state might change after 
      * allocating from it 
      */
-
-    /* if (slabp->freelist == NULL) */
-    /*     list_add(&l3->slabs_full, &slabp->list); */
-    /* else { */
-    /*     list_add(&l3->slabs_partial, &slabp->list); */
-    /* } */
-/* must_grow: */
-
-    /* void *objp; */
-    /* int x; */
-    /* x = cache_grow(cachep, flags, objp); */
-    /* if (slabp->freelist == NULL){ */
-        
-    /* } */
-    /* if (cachep->flags & flags == CFLGS_OFF_SLAB){ */
-    /*     */
-    /*      * blah blah for external slab */
-    /*      *1/ */
-    /*     objp = slabp->s_mem; */
-    /* } */
-    /* else { */
-    /*     objp = slabp->s_mem + slabp->colouroff; */
-    /* } */
     return objp;
 }
 
@@ -733,13 +709,18 @@ void kmem_cache_free(kmem_cache_t *cachep, void *objp)
 {
     struct kmem_list3 *l3;
     struct slab_s *slabp;
+    int was_full = 0;
 
     slabp = virt_to_slab(objp);
     l3 = &cachep->lists;
-    list_del(&slabp->list);
+
+    if (slabp->inuse == cachep->num)
+        was_full = 1;
+
     slab_put_obj(cachep, slabp, objp);
     l3->free_objects++;
-    
+
+        
      
     if (slabp->inuse == 0) {
         /*
@@ -751,14 +732,16 @@ void kmem_cache_free(kmem_cache_t *cachep, void *objp)
          * free_limit = cachep->num
          *
          */
-			if (l3->free_objects > cachep->free_limit) {
-				l3->free_objects -= cachep->num;
-                serial_writestring("destroying slab\n");
-					slab_destroy(cachep, slabp);
-			} else {
-				list_add(&l3->slabs_free, &slabp->list);
-			}
-    } else {
+
+        list_del(&slabp->list);
+        if (l3->free_objects > cachep->free_limit) {
+            l3->free_objects -= cachep->num;
+            serial_writestring("destroying slab\n");
+                slab_destroy(cachep, slabp);
+        } else {
+            list_add(&l3->slabs_free, &slabp->list);
+        }
+    } else if (was_full) {
 			/* Unconditionally move a slab to the end of the
 			 * partial list on free - maximum time for the
 			 * other objects to be freed, too.
@@ -767,8 +750,14 @@ void kmem_cache_free(kmem_cache_t *cachep, void *objp)
          * slab might be on the slab_full list, hence move 
          * it to partial list
          */
+        
+        list_del(&slabp->list);
         list_add_tail(&l3->slabs_partial ,&slabp->list);
     }
+    /*
+     * else {
+     * already in partial , we should not move it 
+     */
 }
 
 
@@ -1000,5 +989,7 @@ void test_slab(void)
     /*     kmem_cache_free(&cache_cache, sizes[i].cs_cachep); */
     /* } */
 
+
+    printk("ptr1 = %x , ptr2 = %x\n", ptr1, ptr2);
     
 }
