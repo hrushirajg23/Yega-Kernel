@@ -15,5 +15,6 @@ void serial_writestring(const char *str);
 void serial_writeint(int num);
 void serial_writehex(uint32_t num);
 void serial_writedec(int );
+void printk(const char *format, ...);
 
 #endif

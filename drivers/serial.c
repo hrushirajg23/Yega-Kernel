@@ -111,43 +111,69 @@ void printk(const char *format, ...)
     va_list args;
     va_start(args, format);
 
-    char ch;
-    while ((ch = *format++) != '\0'){
-        if ( ch == '%' ){
-            switch(*format++){
-                case 'd':
-                    serial_writedec(va_arg(args, int));
-                    break;
-                case 'u':
-                    switch(*(format+1)){
-                        case 'l':
-                            serial_writedec(va_arg(args, unsigned long));
-                            break;
-                        default:
-                            serial_writedec(va_arg(args, unsigned int));
-                            break;
-                    }
-                case 'l':
-                    serial_writedec(va_arg(args, long));
-                    break;
-                case 's':
-                    serial_writestring(va_arg(args, char*));
-                    break;
-                case 'c':
-                    serial_writechar((char)va_arg(args, int));
-                    break;
-                case 'x':
-                    serial_writehex(va_arg(args, unsigned int));
-                    break;
-                case 'p':
-                    serial_writedec(va_arg(args, unsigned long));
-                    break;
-                default:
-                        serial_writechar('%');
-                        serial_writechar(*(format - 1));
-                        break;
-            }
+    while (*format) {
+        if (*format != '%') {
+            serial_writechar(*format++);
+            continue;
         }
+
+        format++; // skip '%'
+
+        switch (*format) {
+
+        case 'd':
+            serial_writedec(va_arg(args, int));
+            break;
+
+        case 'u':
+            serial_writedec((unsigned int)va_arg(args, unsigned int));
+            break;
+
+        case 'x':
+            serial_writehex(va_arg(args, unsigned int));
+            break;
+
+        case 'p':
+            serial_writestring("0x");
+            serial_writehex((uint32_t)va_arg(args, void *));
+            break;
+
+        case 'c':
+            serial_writechar((char)va_arg(args, int));
+            break;
+
+        case 's': {
+            char *s = va_arg(args, char *);
+            if (s)
+                serial_writestring(s);
+            else
+                serial_writestring("(null)");
+            break;
+        }
+
+        case 'l':   // handles %ld and %lu
+            format++;
+            if (*format == 'd')
+                serial_writedec(va_arg(args, long));
+            else if (*format == 'u')
+                serial_writedec(va_arg(args, unsigned long));
+            else
+                serial_writechar('?');
+            break;
+
+        case '%':
+            serial_writechar('%');
+            break;
+
+        default:
+            serial_writechar('%');
+            serial_writechar(*format);
+            break;
+        }
+
+        format++;
     }
+
     va_end(args);
 }
+
