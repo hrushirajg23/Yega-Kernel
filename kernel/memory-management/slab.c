@@ -260,15 +260,20 @@ void kmem_cache_init(kmem_cache_t *cachep, const char *name, size_t objsize,
     cachep->slab_size = ALIGN(sizeof(slab_t), cache_line_size());
     cachep->free_limit = cachep->num;
 
+   
+    // Create a cache of slab descriptors,
+    cachep->slabp_cache = kmem_cache_create("slab_cache", sizeof(struct slab_s), KMALLOC_MINALIGN, SLAB_HWCACHE_ALIGN, NULL);
+    if (!cachep->slabp_cache)
+        printk("creation of slab cache failed\n");
+    /*
+    * Now below we create the general geometric size caches
+    * 32 to 131,072 
+    */
     sizes = malloc_sizes;
     names = cache_names;
-    /*
-     * Now below we create the general geometric size caches
-     * 32 to 131,072 
-     */
 
     for (i = 0; sizes[i].cs_size != 0; i++) {
-        sizes[i].cs_cachep = kmem_cache_create(names[i].name, sizes[i].cs_size, KMALLOC_MINALIGN, KMALLOC_FLAGS, NULL);
+        sizes[i].cs_cachep = kmem_cache_create(names[i].name, sizes[i].cs_size, KMALLOC_MINALIGN, CFLGS_OFF_SLAB | KMALLOC_FLAGS, NULL);
         if (!sizes[i].cs_cachep) {
             printk("\nkmem_cache_create failed for i %d", i);
             break;
@@ -389,6 +394,12 @@ static struct slab_s *alloc_slabmgmt(kmem_cache_t *cachep, void *objp,
          * blah blah allocate memory 
          * from generic caches
          */
+        printk(" off slab mgmt for cache: %s\n", cachep->name); 
+        slabp = kmem_cache_alloc(cachep->slabp_cache, flags);
+        if (!slabp)
+            return NULL;
+        printk(" slab desc address is %p\n", slabp);
+        
     }
     else {
         slabp = objp + colour_off;
@@ -543,7 +554,7 @@ void *cache_alloc_refill(kmem_cache_t *cachep, unsigned int flags)
     struct list_head *entry;
     struct slab_s *slabp;
 
-    printk("\n***************** cache-alloc-refill for cache: %p *****************\n", cachep);
+    printk("\n*****************START cache-alloc-refill for cache: %s *****************\n", cachep->name);
 
     display_kmemlist(cachep);
     entry = l3->slabs_partial.next;
@@ -614,6 +625,7 @@ void *cache_alloc_refill(kmem_cache_t *cachep, unsigned int flags)
      * Now we remove it because its state might change after 
      * allocating from it 
      */
+    printk("\n*****************END cache-alloc-refill for cache: %s *****************\n", cachep->name);
     return objp;
 }
 
@@ -771,8 +783,10 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align,
          */
         while (size <= ralign / 2)
             ralign /= 2;
+        printk("i'm aligned to %d\n", ralign);
     }
     else {
+        printk("i'm not aligned \n");
         ralign = BYTES_PER_WORD;
     }
 
@@ -782,7 +796,7 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align,
      */
     if (ralign < align)
         ralign = align;
-
+    printk("size is %d\n", ralign);
     cachep = kmem_cache_alloc(&cache_cache, gfp);
     if (!cachep)
         goto oops;
@@ -820,9 +834,13 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align,
     cachep->colour = left_over / cachep->colour_off; //free / aln 
     cachep->slab_size = slab_size;
     cachep->flags = flags;
+    /*
+     * changed object size after alignment */
+    cachep->objsize = size;
 
     cachep->ctor = ctor;
     cachep->name = name;
+    cachep->slabp_cache = cache_cache.slabp_cache;
 
     list_add(&cache_chain, &cachep->next);
 
@@ -878,27 +896,27 @@ void test_slab(void)
         printk("kmalloc failed\n");
     /* kfree(ptr); */
 
-    void *ptr2 = kmalloc(20, 0);
+    void *ptr2 = kmalloc(56, 0);
     if (!ptr2)
         printk("kmalloc failed\n");
-    kfree(ptr1);
-    kfree(ptr2);
+    /* kfree(ptr1); */
+    /* kfree(ptr2); */
 
-    cache_sizes_t *sizes;
-    struct cache_names *names;
+    /* cache_sizes_t *sizes; */
+    /* struct cache_names *names; */
 
-    sizes = malloc_sizes;
+    /* sizes = malloc_sizes; */
 
-    ptr1 = kmalloc(56, 0);
-    if (!ptr1)
-        printk("kmalloc failed\n");
-    ptr2 = kmalloc(53, 0);
-    if (!ptr2)
-        printk("kmalloc failed\n");
+    /* ptr1 = kmalloc(56, 0); */
+    /* if (!ptr1) */
+    /*     printk("kmalloc failed\n"); */
+    /* ptr2 = kmalloc(53, 0); */
+    /* if (!ptr2) */
+    /*     printk("kmalloc failed\n"); */
 
-    printk("------------------------------------------------------------------\n");
-    printk("%p\n", ptr1);
-    printk("%p\n", ptr2);
+    /* printk("------------------------------------------------------------------\n"); */
+    /* printk("%p\n", ptr1); */
+    /* printk("%p\n", ptr2); */
     kfree(ptr2);
     kfree(ptr1);
 
@@ -908,5 +926,4 @@ void test_slab(void)
     /* } */
 
 
-    printk("ptr1 = %p , ptr2 = %p\n", ptr1, ptr2);
 }

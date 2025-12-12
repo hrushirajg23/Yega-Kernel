@@ -77,6 +77,7 @@ void cache_estimate(int gfporder, unsigned int objsize, unsigned int align, int 
 kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align, 
         unsigned int flags,void (*ctor)(void *, kmem_cache_t *, unsigned long));
 void kmem_cache_free(kmem_cache_t *cachep, void *objp);
+void *kmem_cache_alloc(kmem_cache_t *cachep, unsigned int flags);
 
 
 #endif
