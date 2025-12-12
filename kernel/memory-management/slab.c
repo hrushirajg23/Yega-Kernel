@@ -11,6 +11,7 @@
 extern zone_t zone;
 kmem_cache_t cache_cache;
 static struct list_head cache_chain; //list of kmem_cache structures
+void run_slab_tests(void);
 
 struct cache_names {
     char *name;
@@ -195,6 +196,7 @@ void kmem_cache_init(kmem_cache_t *cachep, const char *name, size_t objsize,
     struct cache_names *names;
 
     INIT_LIST_HEAD(&cache_chain);
+    INIT_LIST_HEAD(&cache_cache.next);
     list_add(&cache_chain, &cache_cache.next);
     cachep->colour_off = cache_line_size();
     printk("\n initializing slab\n");
@@ -482,6 +484,7 @@ void *slab_get_obj(kmem_cache_t *cachep, struct slab_s *slabp)
     slabp->free_list = *(void **)objp;
 
     slabp->inuse++;
+    cachep->lists.free_objects--;
     return objp;
 }
 
@@ -766,7 +769,7 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align,
     size_t left_over, slab_size;
     size_t ralign; //required alignment
     kmem_cache_t *cachep = NULL, *pc = NULL;
-    int gfp;
+    int gfp =0;
 
     if (size & (BYTES_PER_WORD - 1)) {
         size += (BYTES_PER_WORD - 1);
@@ -891,14 +894,14 @@ void test_slab(void)
 
     kmem_cache_init(&cache_cache, "kmem_cache", sizeof(struct kmem_cache), NULL, NULL);
 
-    void *ptr1 = kmalloc(20, 0);
-    if (!ptr1)
-        printk("kmalloc failed\n");
-    /* kfree(ptr); */
+    /* void *ptr1 = kmalloc(20, 0); */
+    /* if (!ptr1) */
+    /*     printk("kmalloc failed\n"); */
+    /* /1* kfree(ptr); *1/ */
 
-    void *ptr2 = kmalloc(56, 0);
-    if (!ptr2)
-        printk("kmalloc failed\n");
+    /* void *ptr2 = kmalloc(56, 0); */
+    /* if (!ptr2) */
+    /*     printk("kmalloc failed\n"); */
     /* kfree(ptr1); */
     /* kfree(ptr2); */
 
@@ -917,13 +920,15 @@ void test_slab(void)
     /* printk("------------------------------------------------------------------\n"); */
     /* printk("%p\n", ptr1); */
     /* printk("%p\n", ptr2); */
-    kfree(ptr2);
-    kfree(ptr1);
+    /* kfree(ptr2); */
+    /* kfree(ptr1); */
 
 
     /* for (int i = 0; i < MALLOC_SIZES_COUNT; i++) { */
     /*     kmem_cache_free(&cache_cache, sizes[i].cs_cachep); */
     /* } */
-
-
+    /* run_slab_tests(); */
 }
+
+
+
