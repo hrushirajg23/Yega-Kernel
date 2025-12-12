@@ -109,7 +109,7 @@ void ClearPageSlab(struct page *);
 void SetPageSlab(struct page *);
 unsigned long page_to_phys(struct page *);
 void show_buddy(zone_t *zone);
-
+void print_mem_map(void);
 
 
 

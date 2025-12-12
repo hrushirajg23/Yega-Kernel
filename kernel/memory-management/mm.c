@@ -185,7 +185,7 @@ void print_mem_map(void)
 {
     register int iCnt = 0;
     for (iCnt = 0; iCnt < phy_layout.totalram_pages; iCnt++) {
-        printk("\n page : %x\tstatus: ", iCnt);
+        printk("\n iCnt : %x\tpage->page_no: %d, page->private: %d, status: ", iCnt, mem_map[iCnt].page_no, mem_map[iCnt].private);
         if ((mem_map[iCnt].flags & PG_FLAG_RESERVED) == PG_FLAG_RESERVED) {
             printk("reserved, ");
         }
@@ -346,13 +346,13 @@ void setup_paging(unsigned int pgdir_entries)
         swapper_pg_dir[iCnt] = (temp_addr & 0xFFFFF000) | PG_PRESENT | PG_RW;
         pg_ptr = (unsigned long *)temp_addr;
 
-        printk("\npg_dir entry : %d", iCnt);
-        printk("\npage_table address : %p", pg_ptr);
+        /* printk("\npg_dir entry : %d", iCnt); */
+        /* printk("\npage_table address : %p", pg_ptr); */
         jCnt = 0;
         while (phy_addr < total_ram && jCnt < PG_TABLE_ENTRIES) {
             pg_ptr[jCnt] = (phy_addr & 0xFFFFF000) | PG_PRESENT | PG_RW;
 
-            printk("\npage_table_entry : %d\t val: %x", jCnt, pg_ptr[jCnt]);
+            /* printk("\npage_table_entry : %d\t val: %x", jCnt, pg_ptr[jCnt]); */
             jCnt++;
             phy_addr += PAGE_SIZE;
         }
@@ -400,6 +400,7 @@ void init_mem(multiboot_info_t *mbi)
     setup_paging(pgdir_entries);
 
     init_zone(&zone);
+    /* initialize_zone(&zone); */
 
     test_slab();
 

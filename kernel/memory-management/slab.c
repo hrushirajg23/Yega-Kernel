@@ -287,8 +287,8 @@ void cache_estimate(int gfporder, unsigned int objsize, unsigned int align, int 
     unsigned int mgmt_size;
     unsigned int slab_size = PAGE_SIZE << gfporder;
 
-    printk("\ncache estimation gfp order: \n%x", gfporder);
-    printk("\nobjsize: \n%x", objsize);
+    /* printk("\ncache estimation gfp order: \n%x", gfporder); */
+    /* printk("\nobjsize: \n%x", objsize); */
 
     if (flags & CFLGS_OFF_SLAB) {
         mgmt_size = 0;
@@ -307,7 +307,7 @@ void cache_estimate(int gfporder, unsigned int objsize, unsigned int align, int 
 
         mgmt_size = slab_mgmt_size(align);
     }
-    printk("\n nr_objs: \n%x", nr_objs);
+    /* printk("\n nr_objs: \n%x", nr_objs); */
 
     *num = nr_objs;
     *left_over = slab_size - nr_objs * objsize - mgmt_size;
