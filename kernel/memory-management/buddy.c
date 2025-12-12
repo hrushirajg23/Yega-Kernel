@@ -4,6 +4,7 @@
 #include "mm.h"
 
 extern zone_t zone;
+void test_buddy(zone_t *zone);
 
 void free_buddy_system(zone_t* zone)
 {
@@ -21,39 +22,26 @@ void show_buddy(zone_t *zone)
 {
     free_area_t *free_area = zone->free_area;
 
-    serial_writestring("----------------------showing buddy---------------------------\n");
+    printk("----------------------showing buddy---------------------------\n");
     int iCnt = 0;
     for(iCnt = 0; iCnt < BUDDY_GROUPS; iCnt++){
         if(list_is_empty(&free_area[iCnt].free_list) ){
-            serial_writestring("order  is empty : ");
-            serial_writehex(iCnt);
-            serial_writestring("\n");
+            printk("order  is empty : %d\n", iCnt);
         }
         else{
-            serial_writestring("order  is not empty : ");
-            serial_writedec(iCnt);
-            serial_writestring("\n");
+            printk("order  is not empty : %d\n", iCnt);
 
             struct page *tmp = NULL;
             int bCnt = 0;
             list_for_each_entry(tmp, &free_area[iCnt].free_list, lru){
-                serial_writestring(" bCnt : ");
-                serial_writedec(bCnt++);
-                serial_writestring(" page_no: ");
-                serial_writedec(tmp->page_no);
-                serial_writestring(" \n");
-
+                printk(" bCnt : %d, page_no : %d\n", bCnt++, tmp->page_no);
             }
-
         }
     }
 }
 
-
 void ClearPagePrivate(struct page *page)
 {
-    //clears the page flag associated with the page
-    //the flag is PG_private
     page->flags &= ~PG_FLAG_private;
 }
 
@@ -78,6 +66,7 @@ struct page *allocate_block(zone_t *zone, short order)
     free_area_t *area = NULL;
     int size = 0;
     struct page *page = NULL, *buddy = NULL;
+    
     for(current_order = order; current_order < BUDDY_GROUPS; current_order++){
         area = zone->free_area + current_order;
         if(!list_is_empty(&zone->free_area[current_order].free_list) ){
@@ -87,10 +76,7 @@ struct page *allocate_block(zone_t *zone, short order)
     return NULL;
 
 block_found:
-
-    /* printf("got block at order %hi\n", current_order); */
     page = list_entry(area->free_list.next, struct page, lru);
-  
     list_del(&page->lru); 
 
     ClearPagePrivate(page);
@@ -112,14 +98,11 @@ block_found:
     }
     return page;
 }
+
 struct page *alloc_pages(int flags, short order)
 {
-    /*
-     * Complete the hot and cold cache method here
-     */
     return allocate_block(&zone, order);
 }
-
 
 int PagePrivate(struct page *page)
 {
@@ -131,13 +114,11 @@ int PagePrivate(struct page *page)
 
 static inline int page_is_buddy(struct page *buddy, short order)
 {
-    if(PagePrivate(buddy) && buddy->private == order){
+    if(PagePrivate(buddy) && buddy->private == order) {
         return 1;
     }
     return 0;
 }
-
-
 
 void free_block(struct page *page, zone_t *zone, short order)
 {
@@ -146,18 +127,22 @@ void free_block(struct page *page, zone_t *zone, short order)
     struct page *buddy = NULL, *coalesced = NULL;
     int order_size = 1 << order;
 
-    /* printf(" page_idx = %lu\n", page_idx); */
     zone->free_pages += order_size;
 
-    while (order < 10){
+    while (order < BUDDY_GROUPS - 1){
         buddy_idx = page_idx ^ (1 << order);
+        
+        // Check if buddy is within zone bounds
+        if (buddy_idx >= zone->present_pages) {
+            break;
+        }
+        
         buddy = base + buddy_idx;
+        
         if(!page_is_buddy(buddy, order)){
             break;
         }
-        /* serial_writestring(" found buddy at page "); */
-        serial_writedec( buddy->page_no);
-        serial_writestring("\n");
+        
         list_del(&buddy->lru);
         zone->free_area[order].nr_free--;
         ClearPagePrivate(buddy);
@@ -171,122 +156,147 @@ void free_block(struct page *page, zone_t *zone, short order)
     SetPagePrivate(coalesced);
     list_add(&zone->free_area[order].free_list, &coalesced->lru);
     zone->free_area[order].nr_free++;
-
 }
+
 void free_pages(struct page *page, short order)
 {
     free_block(page, page->zone, order);
 }
-int order (int num)
+
+int order(int num)
 {
     int iOrder = 0;
-    if ( num == 0 )
+    if (num == 0)
         return -1;
-    while ( num > 1 )
-    {
+    while (num > 1) {
         num >>= 1;
         iOrder++;
     }
     return iOrder;
 }
 
-int fit_to_possible(int diff)
+void add_free_region_to_buddy(zone_t *zone, int start, int end)
 {
-    register int iFit = 1 << (BUDDY_GROUPS-1);
-    while (iFit > diff){
-        iFit >>= 1;
+    int current = start;
+    
+    printk("Adding free region from %d to %d\n", start, end);
+    
+    while (current <= end) {
+        printk("current is %d\n", current);
+        int remaining = end - current + 1;
+        int max_order = 0;
+        
+        // Find the largest aligned block that fits
+        // Use current position's natural alignment
+        int alignment = current ? __builtin_ctz(current) : BUDDY_GROUPS;
+        printk("alignment is %d\n", alignment);
+        
+        // Find order needed for remaining size
+        printk("remaining is %d\n", remaining);
+        int size_order = 0;
+        int temp = remaining;
+        while (temp > 1) {
+            temp >>= 1;
+            size_order++;
+        }
+         printk("size_order is %d\n", size_order);
+       
+        // Take minimum of alignment and size
+        max_order = (alignment < size_order) ? alignment : size_order;
+        if (max_order >= BUDDY_GROUPS) {
+            max_order = BUDDY_GROUPS - 1;
+        }
+        
+        int block_size = 1 << max_order;
+
+        printk(" Page: %d, order: %d, ( %d pages ) \n", current, max_order, block_size);
+        
+        free_block(&zone->zone_mem_map[current], zone, max_order);
+        current += block_size;
     }
-    return iFit;
 }
 
-void break_block (struct page *prev, struct page *curr, zone_t *zone)
+void init_zone(zone_t *zone)
 {
-    int diff = (curr - prev)  + 1; //diff bet pages
-    int iFit = fit_to_possible(diff);
-
-    if (iFit != diff){
-        break_block(prev + iFit, curr, zone);
-        break_block(prev, prev + iFit - 1, zone);
-        return;
+    int iCnt = 0, iPrev = 0;
+    struct page *page = NULL;
+    
+    // Initialize all pages
+    for(iCnt = 0; iCnt < zone->present_pages; iCnt++){
+        zone->zone_mem_map[iCnt].page_no = iCnt;
+        zone->zone_mem_map[iCnt].zone = zone;
+        INIT_LIST_HEAD(&zone->zone_mem_map[iCnt].lru);
     }
-    free_block(prev , zone, order(iFit)-1);
+    
+    page = zone->zone_mem_map;
+    iCnt = 0;
+    
+    // Skip initial taken/reserved pages
+    while (iCnt < zone->present_pages && 
+           (IS_FLAG(page[iCnt].flags, PG_FLAG_TAKEN) || 
+            IS_FLAG(page[iCnt].flags, PG_FLAG_RESERVED))) {
+        iCnt++;
+    }
+    iPrev = iCnt;
+    
+    printk("\nFirst free page starts at: %d\n", iPrev);
+    
+    // Scan through memory and add free regions
+    while (iCnt < zone->present_pages) {
+        // Found a taken/reserved page?
+        if (IS_FLAG(page[iCnt].flags, PG_FLAG_TAKEN) || 
+            IS_FLAG(page[iCnt].flags, PG_FLAG_RESERVED)) {
+            
+            // Add the free region [iPrev, iCnt-1] to buddy system
+            if (iPrev < iCnt) {
+                add_free_region_to_buddy(zone, iPrev, iCnt - 1);
+            }
+            
+            // Skip over taken/reserved pages
+            while (iCnt < zone->present_pages && 
+                   (IS_FLAG(page[iCnt].flags, PG_FLAG_TAKEN) || 
+                    IS_FLAG(page[iCnt].flags, PG_FLAG_RESERVED))) {
+                iCnt++;
+            }
+            iPrev = iCnt;
+        } else {
+            iCnt++;
+        }
+    }
+    
+    // Add final free region if any
+    if (iPrev < zone->present_pages) {
+        printk("Adding final free region\n");
+        add_free_region_to_buddy(zone, iPrev, zone->present_pages - 1);
+    }
+    
+    printk("\nBuddy allocator initialization complete\n");
+    test_buddy(zone);
 }
 
 void test_buddy(zone_t *zone)
 {
     show_buddy(zone);
-    struct page *page1 = allocate_block(zone, 8);
-
-    serial_writestring("showing buddy after allocate_block 1 \n");
+    
+    printk("\n=== Allocating order 9 (512 pages) ===\n");
+    struct page *page1 = allocate_block(zone, 9);
+    if (page1) {
+        printk("Allocated page: ", page1->page_no);
+    }
     show_buddy(zone);
 
+    printk("\n=== Allocating order 4 (16 pages) ===\n");
     struct page *page2 = allocate_block(zone, 4);
-    serial_writestring("showing buddy after allocate_block 2 \n");
+    if (page2) {
+        printk("Allocated page: ", page2->page_no);
+    }
     show_buddy(zone);
 
+    printk("\n=== Freeing order 4 ===\n");
     free_block(page2, zone, 4);
-    serial_writestring("showing buddy after free_block 2 \n");
     show_buddy(zone);
 
-    free_block(page1, zone, 8);
-    serial_writestring("showing buddy after free_block 1 \n");
+    printk("\n=== Freeing order 9 ===\n");
+    free_block(page1, zone, 9);
     show_buddy(zone);
-
-
 }
-
-
-void init_zone(zone_t *zone)
-{
-    register int iCnt = 0, iPrev = 0; 
-    int largest_block_page_cnt = 0;
-    struct page *page = NULL;
-
-    largest_block_page_cnt = 1 << (BUDDY_GROUPS-1);
-     
-    for(iCnt = 0; iCnt < zone->present_pages; iCnt++){
-        zone->zone_mem_map[iCnt].page_no = iCnt; 
-        zone->zone_mem_map[iCnt].zone = zone;
-        INIT_LIST_HEAD(&zone->zone_mem_map[iCnt].lru);
-    }
-    page = zone->zone_mem_map;
-    iCnt = 0;
-    while ( iCnt < zone->present_pages && 
-                (IS_FLAG(page[iCnt].flags, PG_FLAG_TAKEN) || 
-                 IS_FLAG(page[iCnt].flags, PG_FLAG_RESERVED ) )){
-                iPrev++;
-                iCnt++;
-            }
-    serial_writestring("\niPrev starts from : ");
-    serial_writedec(iPrev);
-    while ( iCnt < zone->present_pages ) {
-        if ( IS_FLAG(page[iCnt].flags, PG_FLAG_TAKEN) || 
-                IS_FLAG(page[iCnt].flags, PG_FLAG_RESERVED ) ){
-            serial_writestring("\n found reserved block at  : ");
-            serial_writedec(iCnt);
-
-            break_block(zone->zone_mem_map + iPrev, zone->zone_mem_map + (iCnt -1), zone);
-            while ( iCnt < zone->present_pages && 
-                (IS_FLAG(page[iCnt].flags, PG_FLAG_TAKEN) || 
-                 IS_FLAG(page[iCnt].flags, PG_FLAG_RESERVED ) )){
-                iCnt++;
-            }
-            iPrev = iCnt;
-        }
-        else if ( (iCnt-iPrev!=0) && ((iCnt - iPrev) % largest_block_page_cnt) == 0 ){
-            serial_writestring("\n completed largest block from : ");
-            serial_writedec(iPrev);
-            serial_writestring(" till : ");
-            serial_writedec(iCnt-1);
-            serial_writestring("\n");
-            break_block(zone->zone_mem_map + iPrev, zone->zone_mem_map + ( iCnt - 1 ), zone);
-            iPrev = iCnt;
-        }
-        iCnt++;
-    }
-
-    test_buddy(zone);
-}
-
-
-
