@@ -16,6 +16,7 @@ BOOT_SRC        = boot/boot.asm
 GDT_C_SRC       = gdt/gdt.c
 GDT_ASM_SRC     = gdt/gdt_flush.asm
 IDT_SRC         = idt/idt.c
+IDT_ASM_SRC		= idt/idt.asm
 ISR_ASM_SRC     = idt/isr/isr.asm
 EXCEPTIONS_SRC  = idt/isr/exceptions.c
 IRQ_ASM_SRC     = idt/irq/irq.asm
@@ -33,6 +34,14 @@ BUDDY_SRC 		= kernel/memory-management/buddy.c
 PG_SRC 			= kernel/memory-management/page.asm
 LIST_SRC		= data_structures/list.c
 SLAB_SRC		= kernel/memory-management/slab.c
+TSS_SRC 		= kernel/tss.asm
+TASK_SRC 		= kernel/task.c
+SYSTEM_SRC		= kernel/system.c
+DISK_SRC		= drivers/disk.c
+FS_SRC			= kernel/fs.c
+STRING_SRC 		= kernel/string.c
+MKFS_SRC		= kernel/mkfs.c
+BUFFER_SRC 		= kernel/buffer.c
 
 # === Objects ===
 OBJS = \
@@ -42,6 +51,7 @@ OBJS = \
 	$(BUILD_DIR)/gdt_flush.o \
 	$(BUILD_DIR)/idt.o \
 	$(BUILD_DIR)/isr_asm.o \
+	$(BUILD_DIR)/idt_asm.o \
 	$(BUILD_DIR)/exceptions.o \
 	$(BUILD_DIR)/irq_asm.o \
 	$(BUILD_DIR)/irq.o \
@@ -56,7 +66,12 @@ OBJS = \
 	$(BUILD_DIR)/mm.o \
 	$(BUILD_DIR)/buddy.o \
 	$(BUILD_DIR)/page.o \
-	$(BUILD_DIR)/list.o $(BUILD_DIR)/slab.o
+	$(BUILD_DIR)/list.o $(BUILD_DIR)/slab.o \
+	$(BUILD_DIR)/tss.o $(BUILD_DIR)/task.o \
+	$(BUILD_DIR)/disk.o $(BUILD_DIR)/system.o \
+	$(BUILD_DIR)/fs.o $(BUILD_DIR)/string.o \
+	$(BUILD_DIR)/mkfs.o $(BUILD_DIR)/buffer.o
+
 
 # === Default ===
 all: $(BUILD_DIR)/yegaos.iso check
@@ -73,6 +88,9 @@ $(BUILD_DIR)/gdt_flush.o: $(GDT_ASM_SRC) | $(BUILD_DIR)
 	$(NASM) -f elf32 $< -o $@
 
 $(BUILD_DIR)/isr_asm.o: $(ISR_ASM_SRC) | $(BUILD_DIR)
+	$(NASM) -f elf32 $< -o $@
+
+$(BUILD_DIR)/idt_asm.o: $(IDT_ASM_SRC) | $(BUILD_DIR)
 	$(NASM) -f elf32 $< -o $@
 
 $(BUILD_DIR)/irq_asm.o: $(IRQ_ASM_SRC) | $(BUILD_DIR)
@@ -133,7 +151,29 @@ $(BUILD_DIR)/list.o: $(LIST_SRC) | $(BUILD_DIR)
 $(BUILD_DIR)/slab.o: $(SLAB_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
+$(BUILD_DIR)/task.o: $(TASK_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
+$(BUILD_DIR)/tss.o: $(TSS_SRC) | $(BUILD_DIR)
+	$(NASM) -f elf32 $< -o $@
+
+$(BUILD_DIR)/system.o: $(SYSTEM_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/disk.o: $(DISK_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/fs.o: $(FS_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/string.o: $(STRING_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/mkfs.o: $(MKFS_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/buffer.o: $(BUFFER_SRC) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 # === Link ELF ===
 $(BUILD_DIR)/yegaos.elf: $(OBJS)
 	$(CC) $(LDFLAGS) -o $@ $(CFLAGS) $^ -lgcc
