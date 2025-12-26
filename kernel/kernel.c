@@ -30,6 +30,10 @@
 #include "vga_display.h"
 #include "zone.h"
 #include "mm.h"
+#include "task.h"
+#include "disk.h"
+#include "fs.h"
+#include "string.h"
 
 #if defined(__linux__)
 #error                                                                         \
@@ -46,24 +50,24 @@
 /* Main kernel entry point */
 void kernel_main(uint32_t magic, uint32_t addr) {
 
-  if (magic != MAGIC) {
-    while (1)
-      asm volatile("hlt");
-  }
+    if (magic != MAGIC) {
+        while (1)
+          asm volatile("hlt");
+    }
 
-  multiboot_info_t *mbi = (multiboot_info_t *)addr;
+    multiboot_info_t *mbi = (multiboot_info_t *)addr;
 
-  serial_init();
-  serial_writestring("Serial initialized. Booting...\n");
+    serial_init();
+    serial_writestring("Serial initialized. Booting...\n");
 
-  serial_writestring("kernel_start= ");
-  serial_writehex(KERNEL_START);
+    serial_writestring("kernel_start= ");
+    serial_writehex(KERNEL_START);
 
-  serial_writestring("\nkernel_end= ");
-  serial_writehex(KERNEL_END);
+    serial_writestring("\nkernel_end= ");
+    serial_writehex(KERNEL_END);
 
-  serial_writestring("GRUB passed multiboot info at 0x\n"); 
-  serial_writehex(addr);
+    serial_writestring("GRUB passed multiboot info at 0x\n"); 
+    serial_writehex(addr);
 
     if (mbi->flags & MULTIBOOT_FLAG_MEM) {
         serial_writestring("\nLower memory:  KB\n");
@@ -73,40 +77,58 @@ void kernel_main(uint32_t magic, uint32_t addr) {
         serial_writehex(mbi->mem_upper);
     }
 
-  /* machine_specific_memory_setup(mbi); */
+    /* machine_specific_memory_setup(mbi); */
 
-  int memory_status = initialize_memeory_manager(mbi);
-  if (memory_status < 0)
+    int memory_status = initialize_memeory_manager(mbi);
+    if (memory_status < 0)
     while (1)
-      asm volatile("hlt");
+        asm volatile("hlt");
 
-  init_mem(mbi);
- 
+    init_mem(mbi);
 
-  serial_writestring("\nGDT init...\n");
-  gdt_initialize();
+    printk("\nGDT init...\n");
+    gdt_initialize();
 
-  serial_writestring("PIC remap...\n");
-  remap_pic(OFFSET1, OFFSET2);
+    printk("PIC remap...\n");
+    remap_pic(OFFSET1, OFFSET2);
 
-  serial_writestring("IDT setup...\n");
-  setup_idt();
+    printk("loading tss\n");
+    tss_load(0x28);
+    sched_init();
 
-  serial_writestring("Install timer & keyboard drivers..\n");
-  install_handlers();
+    printk("IDT setup...\n");
+    /* setup_idt(); */
+    trap_init();
 
-  serial_writestring("PIT init...\n");
-  init_timer(FREQUENCY);
+    printk("Install timer & keyboard drivers..\n");
+    install_handlers();
 
-  serial_writestring("IDT init...\n");
-  initialize_idt();
+    printk("PIT init...\n");
+    init_timer(FREQUENCY);
 
-  serial_writestring("Boot complete.\n");
+    printk("IDT init...\n");
+    initialize_idt();
 
-  terminal_initialize();
-  terminal_writestring("Hello, Welcome To Yega Kernel!\n");
+    printk("Boot complete.\n");
 
-  while (1) {
-    asm volatile("hlt");
-  }
+    printk("working out hard disk \n");
+    test_disk();
+
+    printk("cooking fs\n");
+    mkfs(8, 24);
+    test_fs();
+
+    printk("initializing buffer cache\n");
+    create_buffer_cache();
+
+    terminal_initialize();
+    terminal_writestring("Hello, Welcome To Yega Kernel!\n");
+
+    printk("booted..................\n");
+
+
+
+    while (1) {
+        asm volatile("hlt");
+    }
 }
