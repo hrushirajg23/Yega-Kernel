@@ -5,8 +5,8 @@
 
 #define BYTES_PER_WORD      sizeof(void *)
 #define MAX_MALLOC_SIZE     131072UL
-#define KMALLOC_FLAGS       SLAB_HWCACHE_ALIGN
-#define KMALLOC_MINALIGN    __alignof__(unsigned long long)
+/* #define KMALLOC_FLAGS       SLAB_HWCACHE_ALIGN */
+/* #define KMALLOC_MINALIGN    __alignof__(unsigned long long) */
 
 extern zone_t zone;
 kmem_cache_t cache_cache;
@@ -68,10 +68,10 @@ static struct cache_names cache_names[] = {
 #undef CACHE
 };
 
-void *page_address(struct page *page)
-{
-    return (void *)((page - page->zone->zone_mem_map) * PAGE_SIZE);
-}
+/* void *page_address(struct page *page) */
+/* { */
+/*     return (void *)((page - page->zone->zone_mem_map) * PAGE_SIZE); */
+/* } */
 
 static inline void page_set_cache(struct page *page, struct kmem_cache *cachep)
 {
@@ -506,9 +506,13 @@ void slab_destroy(kmem_cache_t *cachep, slab_t *slabp)
             (cachep->dtor)(objp, cachep, 0);
         }
     }
-    kmem_freepages(cachep, slabp->s_mem - slabp->colouroff);
-    if (cachep->flags & CFLGS_OFF_SLAB)
+    if (OFF_SLAB(cachep)) {
+        kmem_freepages(cachep, slabp->s_mem);
         kmem_cache_free(cachep->slabp_cache, slabp);
+    }
+    else {
+        kmem_freepages(cachep, slabp->s_mem - slabp->colouroff);
+    }
 }
 
 void display_slab(struct slab_s *slabp)
@@ -845,6 +849,8 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align,
     cachep->name = name;
     cachep->slabp_cache = cache_cache.slabp_cache;
 
+    INIT_LIST_HEAD(&cachep->next);
+
     list_add(&cache_chain, &cachep->next);
 
     return cachep;
@@ -887,48 +893,20 @@ void kfree(const void *objp)
     kmem_cache_free(cachep, (void *)objp);
 }
 
+
+void init_slab(void)
+{
+    kmem_cache_init(&cache_cache, "kmem_cache", sizeof(struct kmem_cache), NULL, NULL);
+}
 void test_slab(void)
 {
     struct page *page = virt_to_page((void *)0x00001001);
     printk("my page is : %x\n", page->page_no);
 
-    kmem_cache_init(&cache_cache, "kmem_cache", sizeof(struct kmem_cache), NULL, NULL);
-
-    /* void *ptr1 = kmalloc(20, 0); */
-    /* if (!ptr1) */
-    /*     printk("kmalloc failed\n"); */
-    /* /1* kfree(ptr); *1/ */
-
-    /* void *ptr2 = kmalloc(56, 0); */
-    /* if (!ptr2) */
-    /*     printk("kmalloc failed\n"); */
-    /* kfree(ptr1); */
-    /* kfree(ptr2); */
-
-    /* cache_sizes_t *sizes; */
-    /* struct cache_names *names; */
-
-    /* sizes = malloc_sizes; */
-
-    /* ptr1 = kmalloc(56, 0); */
-    /* if (!ptr1) */
-    /*     printk("kmalloc failed\n"); */
-    /* ptr2 = kmalloc(53, 0); */
-    /* if (!ptr2) */
-    /*     printk("kmalloc failed\n"); */
-
-    /* printk("------------------------------------------------------------------\n"); */
-    /* printk("%p\n", ptr1); */
-    /* printk("%p\n", ptr2); */
-    /* kfree(ptr2); */
-    /* kfree(ptr1); */
-
-
-    /* for (int i = 0; i < MALLOC_SIZES_COUNT; i++) { */
-    /*     kmem_cache_free(&cache_cache, sizes[i].cs_cachep); */
-    /* } */
-    /* run_slab_tests(); */
+   /* run_slab_tests(); 
+    * run tests from mem-test.c
+    *
+    */
 }
-
 
 
