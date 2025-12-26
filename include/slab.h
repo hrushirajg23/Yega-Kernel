@@ -11,6 +11,9 @@
 #define CFLGS_OFF_SLAB		(0x80000000U)
 #define SLAB_HWCACHE_ALIGN 0x00002000  /* HWALIGN flags is paseed during kmalloc */
 
+#define KMALLOC_FLAGS       SLAB_HWCACHE_ALIGN
+#define KMALLOC_MINALIGN    __alignof__(unsigned long long)
+
 
 struct kmem_list3 {
     struct list_head slabs_partial; //list of slab descs with free and non-free object
@@ -78,6 +81,10 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align,
         unsigned int flags,void (*ctor)(void *, kmem_cache_t *, unsigned long));
 void kmem_cache_free(kmem_cache_t *cachep, void *objp);
 void *kmem_cache_alloc(kmem_cache_t *cachep, unsigned int flags);
+void *kmalloc(size_t size, int flags);
+void kfree(const void *objp);
+void init_slab();
+
 
 
 #endif
