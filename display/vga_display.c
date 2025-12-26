@@ -9,6 +9,7 @@
 #include "vga_display.h"
 #include <stddef.h>
 #include <stdint.h>
+#include "string.h"
 
 size_t terminal_row;
 size_t terminal_column;
@@ -70,9 +71,9 @@ void terminal_writestring(const char *data) {
   terminal_write(data, strlen(data));
 }
 
-size_t strlen(const char *str) {
-  size_t len = 0;
-  while (str[len])
-    len++;
-  return len;
-}
+/* size_t strlen(const char *str) { */
+/*   size_t len = 0; */
+/*   while (str[len]) */
+/*     len++; */
+/*   return len; */
+/* } */

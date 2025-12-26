@@ -10,6 +10,7 @@
 #include "manager.h"
 #include "allocator.h"
 #include "slab.h"
+#include "string.h"
 
 struct page *mem_map = NULL;
 unsigned long swapper_pg_dir[PG_DIR_ENTRIES] __attribute__((aligned(4096)));
@@ -86,14 +87,14 @@ void copy_mem_map(void)
     /* print_mem_map(); */
 }
 
-void memset(void *addr, char val, unsigned int size)
-{
-    char *ptr = (char *)addr;
-    register int iCnt = 0;
-    while (iCnt < size) {
-        ptr[iCnt++] = val;
-    }
-}
+/* void memset(void *addr, char val, unsigned int size) */
+/* { */
+/*     char *ptr = (char *)addr; */
+/*     register int iCnt = 0; */
+/*     while (iCnt < size) { */
+/*         ptr[iCnt++] = val; */
+/*     } */
+/* } */
 
 
 void print_machine_map(void)
@@ -400,11 +401,21 @@ void init_mem(multiboot_info_t *mbi)
     setup_paging(pgdir_entries);
 
     init_zone(&zone);
-    /* initialize_zone(&zone); */
 
+    init_slab();
+    
     test_slab();
 
     show_buddy(&zone);
+
+    /* struct page *p1 = &zone.zone_mem_map[2]; */
+    /* void *addr1 = page_address(&zone.zone_mem_map[5]); */
+    /* *(int*)addr1 = 100; */
+    /* printk("page_address test addr is %p, val: %d\n", addr1, *(int*)addr1); */
+
+    /* unsigned long addr2 = __pa(addr1); */
+    /* printk("page_address test addr is %x, val: %d\n", addr2, *(int*)addr2); */
+   
 
     /* print_mem_map(); */
 }
