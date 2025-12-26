@@ -10,3 +10,11 @@ Since the 32bit setup is already done, we just need to set path
 
 qemu-system-i386 -cdrom build/yegaos.iso -serial stdio
 
+**** running via hard-disk ***
+
+qemu-system-i386 \
+  -drive file=disk.img,format=raw,if=ide \
+  -cdrom build/yegaos.iso \
+  -d guest_errors \
+  -serial stdio
+
