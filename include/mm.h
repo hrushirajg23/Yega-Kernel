@@ -13,7 +13,7 @@
 
 
 void memset(void *addr, char val, unsigned int size);
-void *memcpy(void *dest, void *src, unsigned int size);
+void *memcpy(void *dest, const void *src, unsigned int size);
 void init_mem(multiboot_info_t *);
 
 

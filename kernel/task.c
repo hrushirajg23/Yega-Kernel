@@ -9,6 +9,9 @@
 #define KSTACK_ORDER 1   // 8KB stack
 #define TSS_ENTRY 5
 
+#define MAX_TASKS 32 //hence we'll use a single integer in prio_array_t data 
+                     //structure as a bitmap to denote all tasks
+
 int last_pid = 0;
 kmem_cache_t *cache_task_struct = NULL;
 

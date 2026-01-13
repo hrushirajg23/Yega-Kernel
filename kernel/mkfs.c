@@ -6,7 +6,6 @@
 #include "string.h"
 #include "slab.h"
 
-#define EXT2_BLK_SIZE   1024
 
 // Inode table size based on the 214-block reference
 // This yields 1712 inodes per group with 128-byte inodes
@@ -74,8 +73,8 @@ static uint32_t free_blocks_in_group(uint32_t group_idx, bool has_super_backup) 
     return total_blocks_in_group - reserved;
 }
 
-superblock_t make_super(uint16_t block_group_nr) {
-    superblock_t b = { 0 };
+ext2_super_block make_super(uint16_t block_group_nr) {
+    ext2_super_block b = { 0 };
 
     b.s_inodes_per_group = EXT2_INODES_PER_GROUP;
     b.s_blocks_per_group = EXT2_BLOCKS_PER_GROUP;
@@ -113,7 +112,7 @@ superblock_t make_super(uint16_t block_group_nr) {
     return b;
 }
 
-void write_superblock(uint32_t location, superblock_t b) {
+void write_superblock(uint32_t location, ext2_super_block b) {
     disk_write(location, (uint8_t *) &b, sizeof(b));
 }
 
@@ -271,12 +270,13 @@ void mkfs(uint32_t mb_start, uint32_t len) {
     for (uint32_t i = 0; i < g_n_block_groups; i++) {
         // Only write superblock to groups 0 and 1 (backups)
         if (i < 2) {
-            superblock_t sb = make_super(i);
+            ext2_super_block sb = make_super(i);
             uint32_t sb_addr = fs_lba + (i * SECTORS_PER_BLOCK_GROUP);
             write_superblock(sb_addr, sb);
             printk("Group %u: wrote superblock at LBA %u\n", i, sb_addr);
         }
     }
+
 
     // Write BGDT after superblock in groups 0 and 1
     write_bgdt(fs_lba + SECTORS_PER_BLOCK, bgdt);
@@ -310,10 +310,12 @@ void show_fs(uint32_t mb_start) {
     uint32_t fs_lba = fs_start_to_lba_superblk(mb_start);
     
     // Read the superblock
-    superblock_t sb;
+    ext2_super_block sb;
     uint8_t sb_buffer[EXT2_BLK_SIZE];
     disk_read(fs_lba, sb_buffer);
-    memcpy(&sb, sb_buffer, sizeof(superblock_t));
+    memcpy(&sb, sb_buffer, sizeof(ext2_super_block));
+
+    printk("fs_lba for superblock is %u\n", fs_lba);
     
     // Validate magic number
     if (sb.s_magic != EXT2_SUPER_MAGIC) {

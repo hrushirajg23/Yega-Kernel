@@ -27,6 +27,8 @@
 #define cache_line_size() L1_CACHE_BYTES
 #define ULONG_MAX	(~0UL)
 
+#define ____cacheline_aligned \
+    __attribute__((__aligned__(L1_CACHE_BYTES)))
 
 void kernel_main(uint32_t magic, uint32_t addr);
 

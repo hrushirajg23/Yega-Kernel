@@ -42,7 +42,7 @@ unsigned long page_to_phys(struct page *page)
     return phy_addr;
 }
 
-void *memcpy(void *dest, void *src, unsigned int size)
+void *memcpy(void *dest, const void *src, unsigned int size)
 {
     char *psrc = (char *)src;
     char *pdest = (char *)dest;

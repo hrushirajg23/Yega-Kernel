@@ -7,10 +7,12 @@
  *
  *
  */
+
+#include <stdbool.h>
 #include <stdint.h>
 #include "disk.h"
-#include <stdbool.h>
 #include "list.h"
+#include "system.h"
 
 #define DEV_NO 4
 
@@ -74,6 +76,13 @@
 #define EXT2_FT_FIFO        5
 #define EXT2_FT_SOCK        6
 #define EXT2_FT_SYMLINK     7
+
+#define EXT2_BLK_SIZE   1024
+
+/* inode flags */
+
+#define INODE_locked 1 << 0
+
 
 
 /* located at byte offset 1024
@@ -142,7 +151,7 @@ typedef struct {
     uint32_t s_default_mount_options;
     uint32_t s_first_meta_bg;
     uint8_t reserved_future[760];
-} superblock_t;
+} ext2_super_block;
 
 /* Block group descriptor. 
  * The block group descriptor table 
@@ -258,7 +267,23 @@ typedef struct _ft {
     struct _ft *prev;
 } ft_entry;
 
+// Global filesystem parameters (set by mkfs/read_fs)
+extern uint32_t g_n_block_groups;
+extern uint32_t g_total_blocks;
+extern uint32_t g_blocks_in_last_group;
 
+// Also add these helpful macros
+#define EXT2_BLK_SIZE 1024
+#define EXT2_BLOCKS_PER_GROUP 8192
+#define EXT2_INODES_PER_GROUP ((214 * EXT2_BLK_SIZE) / sizeof(inode_t))
+
+
+#define hash_fn(bno, devno) (bno % devno)
+
+
+/* BUFFER_CACHE
+ * ======================================================================================
+ */
 
 #define BH_lock 1 << 0
 #define BH_dirty 1 << 1
@@ -296,14 +321,91 @@ struct buffer_head *getblk(unsigned short dev_no, unsigned long blocknr);
 void show_fs(uint32_t mb_start);
 
 
-// Global filesystem parameters (set by mkfs/read_fs)
-extern uint32_t g_n_block_groups;
-extern uint32_t g_total_blocks;
-extern uint32_t g_blocks_in_last_group;
+/*
+ * second extended-fs super-block data in memory
+ */
+struct ext2_sb_info {
+	unsigned long s_frag_size;	/* Size of a fragment in bytes */
+	unsigned long s_frags_per_block;/* Number of fragments per block */
+	unsigned long s_inodes_per_block;/* Number of inodes per block */
+	unsigned long s_frags_per_group;/* Number of fragments in a group */
+	unsigned long s_blocks_per_group;/* Number of blocks in a group */
+	unsigned long s_inodes_per_group;/* Number of inodes in a group */
+	unsigned long s_itb_per_group;	/* Number of inode table blocks per group */
+	unsigned long s_gdb_count;	/* Number of group descriptor blocks */
+	unsigned long s_desc_per_block;	/* Number of group descriptors per block */
+	unsigned long s_groups_count;	/* Number of groups in the fs */
+	unsigned long s_overhead_last;  /* Last calculated overhead */
+	unsigned long s_blocks_last;    /* Last seen block count */
+	struct buffer_head * s_sbh;	/* Buffer containing the super block */
+	ext2_super_block * s_es;	/* Pointer to the super block in the buffer */
 
-// Also add these helpful macros
-#define EXT2_BLK_SIZE 1024
-#define EXT2_BLOCKS_PER_GROUP 8192
-#define EXT2_INODES_PER_GROUP ((214 * EXT2_BLK_SIZE) / sizeof(inode_t))
+    struct buffer_head ** s_group_desc;
+	unsigned long  s_mount_opt;
+	unsigned long s_sb_block;
+	// uid_t s_resuid;
+	// gid_t s_resgid;
+	unsigned short s_mount_state;
+	unsigned short s_pad;
+	int s_addr_per_block_bits;
+	int s_desc_per_block_bits;
+	int s_inode_size;
+	int s_first_ino;
+	uint32_t s_next_generation;
+	unsigned long s_dir_count;
+	uint8_t *s_debts;
+	unsigned int s_freeblocks_counter;
+	unsigned int s_freeinodes_counter;
+	unsigned int s_dirs_counter;
+	/*
+	 * s_lock protects against concurrent modifications of s_mount_state,
+	 * s_blocks_last, s_overhead_last and the content of superblock's
+	 * buffer pointed to by sbi->s_es.
+	 *
+	 * Note: It is used in ext2_show_options() to provide a consistent view
+	 * of the mount options.
+	 */
+};
+int disk_write_blk(uint32_t block_num, uint8_t *buf);
+int disk_read_blk(uint32_t block_num, uint8_t *buf); 
 
+/* ext2 filesystem helper functions (from fs.c) */
+inode_t get_inode(uint32_t inode_n);
+void write_inode_table(uint32_t inode_n, inode_t new_inode);
+uint32_t get_data_block_n(inode_t file, uint32_t i);
+int reserve_free_inode(uint32_t *inode_n);
+void unset_inode_bitmap(uint32_t inode_num);
+void set_inode_bitmap(uint32_t inode_num);
+int reserve_free_block(uint32_t *block_n);
+void unset_block_bitmap(uint32_t block_num);
+void set_block_bitmap(uint32_t block_num);
+uint8_t *get_file_block(mochi_file file, uint32_t i);
+int add_dentry(mochi_file dir, dentry_t d);
+inode_t new_dir_inode(void);
+uint16_t i_block_len(inode_t i);
+
+/* ext2 operation tables */
+extern struct super_operations ext2_sops;
+extern struct inode_operations ext2_file_inode_operations;
+extern struct inode_operations ext2_dir_inode_operations;
+extern struct file_operations ext2_file_operations;
+
+/* ext2 superblock operations */
+struct super_block *ext2_read_super(struct super_block *sb, void *data, int silent);
+void ext2_put_super(struct super_block *sb);
+void ext2_write_super(struct super_block *sb);
+int ext2_sync_fs(struct super_block *sb, int wait);
+
+/* ext2 inode operations */
+struct inode *ext2_new_inode(struct inode *dir, int mode);
+
+void ext2_free_inode(struct inode *inode);
+void ext2_read_inode(struct inode *inode);
+int ext2_write_inode(struct inode *inode);
+void ext2_delete_inode(struct inode *inode);
+int ext2_get_block(struct inode *inode, uint32_t block_idx, uint32_t *block_num);
+
+void ext2_fs_init(void);
 #endif
+
+

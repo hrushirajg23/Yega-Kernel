@@ -9,6 +9,10 @@
 #include "mm.h"
 #include "serial.h"
 #include "string.h"
+#include "vfs.h"
+#include "dcache.h"
+
+#define KLOG(fmt, ...) printk("[ext2] " fmt "\n", ##__VA_ARGS__)
 
 #define S_BLOCK_SIZE    (1024 << super.s_log_block_size)
 
@@ -26,7 +30,7 @@ static uint16_t n_block_groups;
 // TODO: initialize this with a calloc
 static bgdesc_t bgdt[1024];
 
-static superblock_t super;
+static ext2_super_block super;
 
 
 int disk_read_blk(uint32_t block_num, uint8_t *buf) {
@@ -300,8 +304,8 @@ uint32_t fs_start_to_lba_superblk(uint32_t mb_start) {
 
 void set_superblock() {
     // set superblock 
-    superblock_t b;
-    if (disk_read_blk(1, (uint8_t *) &b)) {
+    ext2_super_block b;
+    if (disk_read_blk(2, (uint8_t *) &b)) {
         printk("Failed to read superblock.\n");
         sys_exit();
     }
@@ -836,8 +840,6 @@ void finish_fs_init(uint32_t mb_start) {
 
 }
 
-void test_fs() {
-}
 
 /* int open(const char *name, int flags, int perm) */
 /* { */
@@ -909,7 +911,7 @@ int mkdir(char *path) {
     reserve_free_block(&new_block_n);
 
     // Create a new inode, and update the inode table with it.
-    inode_t new_inode = new_dir_inode(new_block_n);
+    inode_t new_inode = new_dir_inode();
 
     // write to inode table
     write_inode_table(new_inode_n, new_inode);
@@ -941,7 +943,388 @@ int rmdir(char *path) {
     printk("\n");
 }
 
-struct m_inode {
+void read_inode(unsigned long inode_num)
+{
+    uint32_t index = inode_num - 1;
+}
+
+
+
+
+void copy_ext2_sb_to_mem(struct ext2_sb_info *ext2_sb, ext2_super_block *s_es)
+{
+    ext2_sb->s_inodes_per_block = EXT2_BLK_SIZE / sizeof(inode_t); 
+    ext2_sb->s_blocks_per_group =  s_es->s_blocks_per_group;
+    ext2_sb->s_inodes_per_group =  s_es->s_inodes_per_group;
+    ext2_sb->s_itb_per_group = 1;
+    ext2_sb->s_gdb_count = (g_n_block_groups * sizeof(bgdesc_t)) /
+        EXT2_BLK_SIZE; //blocks needed to store block group descriptors
+    ext2_sb->s_desc_per_block = EXT2_BLK_SIZE / sizeof(bgdesc_t);
+    ext2_sb->s_groups_count = g_n_block_groups; //total block groups;
+    ext2_sb->s_sbh = NULL;  //buffer containing super block
+    ext2_sb->s_es = s_es;
+    ext2_sb->s_group_desc = NULL; //buffer containing group desc
+    ext2_sb->s_inode_size = s_es->s_inode_size;
+    ext2_sb->s_first_ino = s_es->s_first_ino;
+    ext2_sb->s_freeblocks_counter = s_es->s_free_blocks_count;
+    ext2_sb->s_freeinodes_counter = s_es->s_free_inodes_count;
+}
+
+
+void display_ext2_super_block(ext2_super_block *sb)
+{
+    int i;
+
+    KLOG("EXT2 Superblock dump:");
+
+    KLOG("Inodes count            : %u", sb->s_inodes_count);
+    KLOG("Blocks count            : %u", sb->s_blocks_count);
+    KLOG("Reserved blocks count   : %u", sb->s_r_blocks_count);
+    KLOG("Free blocks count       : %u", sb->s_free_blocks_count);
+    KLOG("Free inodes count       : %u", sb->s_free_inodes_count);
+    KLOG("First data block        : %u", sb->s_first_data_block);
+    KLOG("Log block size          : %u (block size = %u)",
+         sb->s_log_block_size, 1024U << sb->s_log_block_size);
+    KLOG("Log fragment size       : %u", sb->s_log_frag_size);
+    KLOG("Blocks per group        : %u", sb->s_blocks_per_group);
+    KLOG("Fragments per group     : %u", sb->s_frags_per_group);
+    KLOG("Inodes per group        : %u", sb->s_inodes_per_group);
+    /* KLOG("Mount time              : %u", sb->s_mtime); */
+    /* KLOG("Write time              : %u", sb->s_wtime); */
+
+    /* KLOG("Mount count             : %u", sb->s_mnt_count); */
+    /* KLOG("Max mount count         : %u", sb->s_max_mnt_count); */
+    /* KLOG("Magic                   : 0x%X", sb->s_magic); */
+    /* KLOG("Filesystem state        : %u", sb->s_state); */
+    /* KLOG("Errors behavior         : %u", sb->s_errors); */
+    /* KLOG("Minor revision level    : %u", sb->s_minor_rev_level); */
+
+    /* KLOG("Last check              : %u", sb->s_lastcheck); */
+    /* KLOG("Check interval          : %u", sb->s_checkinterval); */
+    /* KLOG("Creator OS              : %u", sb->s_creator_os); */
+    /* KLOG("Revision level          : %u", sb->s_rev_level); */
+    /* KLOG("Default res UID         : %u", sb->s_def_resuid); */
+    /* KLOG("Default res GID         : %u", sb->s_def_resgid); */
+
+    /* KLOG("First non-reserved inode: %u", sb->s_first_ino); */
+    KLOG("Inode size              : %u", sb->s_inode_size);
+    KLOG("Block group number      : %u", sb->s_block_group_nr);
+    /* KLOG("Feature compat          : 0x%X", sb->s_feature_compat); */
+    /* KLOG("Feature incompat        : 0x%X", sb->s_feature_incompat); */
+    /* KLOG("Feature ro_compat       : 0x%X", sb->s_feature_ro_compat); */
+
+    /* printk("[ext2] UUID                    : "); */
+    /* for (i = 0; i < 16; i++) */
+    /*     printk("%02X", (uint8_t)sb->s_uuid[i]); */
+    /* printk("\n"); */
+
+    /* printk("[ext2] Volume name             : "); */
+    /* for (i = 0; i < 16 && sb->s_volume_name[i]; i++) */
+    /*     printk("%c", sb->s_volume_name[i]); */
+    /* printk("\n"); */
+
+    /* printk("[ext2] Last mounted at         : "); */
+    /* for (i = 0; i < 64 && sb->s_last_mounted[i]; i++) */
+    /*     printk("%c", sb->s_last_mounted[i]); */
+    /* printk("\n"); */
+
+    /* KLOG("Algorithm bitmap        : %u", sb->s_algo_bitmap); */
+    /* KLOG("Prealloc blocks         : %u", sb->s_prealloc_blocks); */
+    /* KLOG("Prealloc dir blocks     : %u", sb->s_prealloc_dir_blocks); */
+
+    /* printk("[ext2] Journal UUID            : "); */
+    /* for (i = 0; i < 16; i++) */
+    /*     printk("%02X", (uint8_t)sb->s_journal_uuid[i]); */
+    /* printk("\n"); */
+
+    /* KLOG("Journal inode           : %u", sb->s_journal_inum); */
+    /* KLOG("Journal device          : %u", sb->s_journal_dev); */
+    /* KLOG("Last orphan             : %u", sb->s_last_orphan); */
+
+    /* KLOG("Default hash version    : %u", sb->s_def_hash_version); */
+    /* KLOG("Default mount options   : 0x%X", sb->s_default_mount_options); */
+    /* KLOG("First meta block group  : %u", sb->s_first_meta_bg); */
+
+    KLOG("Superblock dump complete.");
+}
+
+void copy_ext2_sb_from_mem(struct ext2_sb_info *ext2_sb, ext2_super_block *s_es)
+{
+    s_es->s_free_inodes_count = ext2_sb->s_freeinodes_counter;
+    s_es->s_free_blocks_count = ext2_sb->s_freeblocks_counter;
+}
+void read_sb(struct ext2_sb_info *ext2_sb)
+{
+    ext2_super_block *s_es;
+    struct buffer_head *bh;
+
+    bh = bread(DEV_NO, 2);
+    if (!bh) {
+        printk("failed reading buffer 1 for sb\n");
+    }
+    s_es = (ext2_super_block*)bh->b_data;
+    copy_ext2_sb_to_mem(ext2_sb, s_es);
+
+    display_ext2_super_block(s_es);
+
+    brelse(bh);
+}
+static inline struct ext2_sb_info *EXT2_SB(struct super_block *sb)
+{
+	return sb->s_fs_info;
+}
+
+/* Byte order conversion macros (simplified - assumes little endian) */
+#define cpu_to_le32(x) (x)
+#define le32_to_cpu(x) (x)
+
+/* Stub functions for counting - these would need proper implementation */
+static uint32_t ext2_count_free_blocks(struct super_block *sb)
+{
+    struct ext2_sb_info *sbi = EXT2_SB(sb);
+    return sbi->s_freeblocks_counter;
+}
+
+static uint32_t ext2_count_free_inodes(struct super_block *sb)
+{
+    struct ext2_sb_info *sbi = EXT2_SB(sb);
+    return sbi->s_freeinodes_counter;
+}
+
+/* Mark buffer as dirty */
+static void mark_buffer_dirty(struct buffer_head *bh)
+{
+    if (bh) {
+        SET_FLAG(bh->flags, BH_dirty);
+    }
+}
+
+static void ext2_sync_super(struct super_block *sb, ext2_super_block *es,
+			    int wait)
+{
+	/* ext2_clear_super_error(sb); */
+	es->s_free_blocks_count = cpu_to_le32(ext2_count_free_blocks(sb));
+	es->s_free_inodes_count = cpu_to_le32(ext2_count_free_inodes(sb));
+	/* es->s_wtime = cpu_to_le32(get_seconds()); */
+	/* unlock before we do IO */
+	mark_buffer_dirty(EXT2_SB(sb)->s_sbh);
+	/* if (wait) */
+	/* 	sync_dirty_buffer(EXT2_SB(sb)->s_sbh); */
+	sb->s_dirt = 0;
+}
+
+
+int ext2_sync_fs(struct super_block *sb, int wait)
+{
+	struct ext2_sb_info *sbi = EXT2_SB(sb);
+	ext2_super_block *es = EXT2_SB(sb)->s_es;
+
+	/* if (es->s_state & cpu_to_le16(EXT2_VALID_FS)) { */
+	/* 	es->s_state &= cpu_to_le16(~EXT2_VALID_FS); */
+	/* } */
+	
+    ext2_sync_super(sb, es, wait);
+	return 0;
+}
+void ext2_write_super(struct super_block *sb)
+{
+    ext2_sync_fs(sb, 1);
+}
+
+void write_sb(struct ext2_sb_info *ext2_sb)
+{
+    ext2_super_block *s_es;
+    struct buffer_head *bh;
+
+    bh = bread(DEV_NO, 2);
+    if (!bh) {
+        printk("failed reading buffer 1 for sb\n");
+    }
+
+    s_es = (ext2_super_block*)bh->b_data;
+    copy_ext2_sb_from_mem(ext2_sb, s_es);
+
+    bwrite(bh);
+
+    brelse(bh);
+}
+
+void test_fs(void)
+{
+    printk("testing fs\n");
+    struct buffer_head *bh;
+    bh = bread(DEV_NO, 2);
+    if (!bh) {
+        printk("failed reading buffer 1 for sb\n");
+    }
+    ext2_super_block *sb = (ext2_super_block*)bh->b_data;
+    /* ext2_super_block sb; */
+    /* uint8_t sb_buffer[EXT2_BLK_SIZE]; */
+    /* disk_read(2, sb_buffer); */
+    /* memcpy(&sb, sb_buffer, sizeof(ext2_super_block)); */
+    display_ext2_super_block(sb);
+
+    brelse(bh);
+
+   
+}
+
+void ext2_fs_init(void)
+{
+    
+    struct ext2_sb_info *ext2_sb; //in memory super-block data
+    ext2_sb = kmalloc(sizeof(struct ext2_sb_info), 0);
+    if (!ext2_sb) {
+        printk("failed kmalloc for ext2_sb");
+        return;
+    }
+    read_sb(ext2_sb);
+
+    printk("read data =================== from sb \n");
+    printk("free inodes %d\n", ext2_sb->s_freeinodes_counter);
+
+    /* ext2_sb->s_freeinodes_counter--; */
+
+    write_sb(ext2_sb);
+
+    test_fs();
+}
+
+/* ext2 superblock operations table */
+struct super_operations ext2_sops = {
+    .alloc_inode = NULL,
+    .destroy_inode = NULL,
+    .write_inode = ext2_write_inode,
+    .read_inode = ext2_read_inode,
+    .put_inode = NULL,
+    .drop_inode = NULL,
+    .delete_inode = ext2_delete_inode,
+    .put_super = ext2_put_super,
+    .write_super = ext2_write_super,
+    .sync_fs = ext2_sync_fs,
 };
 
+/* Mount ext2 filesystem */
+struct super_block *ext2_read_super(struct super_block *sb, void *data, int silent)
+{
+    struct ext2_sb_info *sbi;
+    ext2_super_block *es;
+    struct buffer_head *bh;
+    struct inode *root_inode;
+    struct dentry *root_dentry;
+    
+    if (!sb) {
+        return NULL;
+    }
+    
+    printk("ext2_read_super: mounting ext2 filesystem\n");
+    
+    /* Allocate ext2-specific superblock info */
+    sbi = (struct ext2_sb_info *)kmalloc(sizeof(struct ext2_sb_info), 0);
+    if (!sbi) {
+        printk("ext2_read_super: failed to allocate sbi\n");
+        return NULL;
+    }
+    
+    /* Read superblock from disk */
+    bh = bread(DEV_NO, 2);  /* Superblock is at block 2 */
+    if (!bh) {
+        printk("ext2_read_super: failed to read superblock\n");
+        kfree(sbi);
+        return NULL;
+    }
+    
+    es = (ext2_super_block *)bh->b_data;
+    
+    /* Verify magic number */
+    if (es->s_magic != EXT2_SUPER_MAGIC) {
+        printk("ext2_read_super: invalid magic number 0x%x\n", es->s_magic);
+        brelse(bh);
+        kfree(sbi);
+        return NULL;
+    }
+    
+    /* Copy superblock info to memory */
+    copy_ext2_sb_to_mem(sbi, es);
+    
+    /* Initialize VFS superblock */
+    sb->s_blocksize = EXT2_BLK_SIZE;
+    sb->s_magic = EXT2_SUPER_MAGIC;
+    sb->s_op = &ext2_sops;
+    sb->s_fs_info = sbi;
+    sb->s_dev = DEV_NO;
+    
+    /* Keep superblock buffer */
+    sbi->s_sbh = bh;
+    sbi->s_es = es;
+    
+    /* Get root inode */
+    root_inode = iget(DEV_NO, EXT2_ROOT_INO);
+    if (!root_inode) {
+        printk("ext2_read_super: failed to get root inode\n");
+        brelse(bh);
+        kfree(sbi);
+        return NULL;
+    }
+    
+    /* Read root inode from disk */
+    ext2_read_inode(root_inode);
+    
+    /* Create root dentry */
+    root_dentry = d_alloc_root(root_inode);
+    if (!root_dentry) {
+        printk("ext2_read_super: failed to allocate root dentry\n");
+        brelse(bh);
+        kfree(sbi);
+        return NULL;
+    }
+    
+    sb->s_root = root_dentry;
+    
+    printk("ext2_read_super: mount successful\n");
+    display_ext2_super_block(es);
+    
+    return sb;
+}
 
+/* Unmount ext2 filesystem */
+void ext2_put_super(struct super_block *sb)
+{
+    struct ext2_sb_info *sbi;
+    
+    if (!sb) {
+        return;
+    }
+    
+    printk("ext2_put_super: unmounting ext2 filesystem\n");
+    
+    sbi = EXT2_SB(sb);
+    if (sbi) {
+        /* Write superblock if dirty */
+        if (sb->s_dirt) {
+            ext2_write_super(sb);
+        }
+        
+        /* Release superblock buffer */
+        if (sbi->s_sbh) {
+            brelse(sbi->s_sbh);
+        }
+        
+        /* Free ext2-specific info */
+        kfree(sbi);
+        sb->s_fs_info = NULL;
+    }
+}
+
+/* ext2 filesystem type */
+struct file_system_type ext2_fs_type = {
+    .name = "ext2",
+    .fs_flags = 0,
+    .read_super = ext2_read_super,
+};
+
+/* Register ext2 filesystem */
+int ext2_register_filesystem(void)
+{
+    return register_filesystem(&ext2_fs_type);
+}

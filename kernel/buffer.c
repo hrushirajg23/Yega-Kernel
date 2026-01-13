@@ -180,12 +180,12 @@ void brelse(struct buffer_head *bh)
 
 struct buffer_head *bread(unsigned short dev_no, unsigned long blocknr)
 {
-    printk("invoed bread \n");
+    printk("invoed bread for blocknr %d\n", blocknr);
     struct buffer_head *bh = getblk(dev_no, blocknr);
     //check is buffer is valid
     
     printk("invoed bread 2 \n");
-    if (!IS_FLAG(bh->flags, BH_dirty)) {
+    if (IS_FLAG(bh->flags, BH_dirty)) {
         return bh;
     }
 
@@ -216,6 +216,15 @@ void bwrite(struct buffer_head *bh)
     brelse(bh);
 }
 
+void test_disk_block(void)
+{
+    uint8_t buffer[BUFFER_SIZE];
+    memset(buffer, 0, BUFFER_SIZE);
+
+    disk_read(16, buffer);
+    printk("disk content %s\n", buffer);
+
+}
 void test_bcache(void)
 {
     printk("testing buffer cache .............\n");
@@ -236,17 +245,19 @@ void test_bcache(void)
     
     printk("bwrite completed\n");
 
-    unsigned char *ptr = (unsigned char*)kmalloc(BUFFER_SIZE, 0);
-    if (!ptr) {
-        printk("kmalloc failed in testing bcache\n");
-        return;
-    }
+    memset(bh->b_data, 0, BUFFER_SIZE);
+
     struct buffer_head *tmp = NULL;
 
     printk("invoking bread\n");
     tmp = bread(DEV_NO, 16); 
 
     printk("bread completed\n");
-    printk(" buffer content %s\n", tmp->b_data);
+    printk("buffer content %s\n", tmp->b_data);
+
+    brelse(tmp);
+
+    /* test_disk_block(); */
 
 }
+

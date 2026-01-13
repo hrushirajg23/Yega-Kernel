@@ -1,3 +1,7 @@
+#ifndef _TASK_H
+#define _TASK_H
+
+#include "list.h"
 
 #define NR_TASKS 10
 typedef int (*fn_ptr)();
@@ -133,5 +137,18 @@ struct task_struct {
 // 	{ \
 // 		{0,0}, \
 
+#define PRIORITIES 5
+struct prio_array_t {
+    int nr_active;
+    unsigned long bitmap[1]; 
+    /*
+     * A priority bitmap: each flag is set if and only if the corre-
+     * sponding priority list is not empty
+    */
+    struct list_head queue[PRIORITIES];
+};
+    
 void tss_load(int offset);
 void sched_init(void);
+
+#endif
