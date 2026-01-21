@@ -1,4 +1,7 @@
+
 #include "string.h"
+#include <stdint.h>
+#include <stddef.h>
 
 void *memmove(void *dest, const void *src, size_t n) {
     // check for overlap.
@@ -56,14 +59,27 @@ void *memset(void *dest, int c, size_t n) {
 }
 
 
-int strcmp(const char *s1, const char *s2) {
-    char *is1 = s1;
-    char *is2 = s2;
-    while (*is1++ == *is2++) {
-        if (*is1 == '\0') return 0;
+int strcmp(const char *s1, const char *s2)
+{
+    while (*s1 && (*s1 == *s2)) {
+        s1++;
+        s2++;
     }
-    // strings unequal at this point
-    return *is1 < *is2;
+    return (unsigned char)*s1 - (unsigned char)*s2;
+}
+
+int strncmp(const char *s1, const char *s2, size_t n)
+{
+    if (n == 0)
+        return 0;
+
+    while (n-- && *s1 && (*s1 == *s2)) {
+        if (n == 0)
+            return 0;
+        s1++;
+        s2++;
+    }
+    return (unsigned char)*s1 - (unsigned char)*s2;
 }
 
 char *strcpy(char *s, const char *ct) {
