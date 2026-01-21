@@ -1,206 +1,112 @@
+# ====================================
+# YegaOS Kernel Build System
+# ====================================
+
 # === Toolchain ===
-CC        = i686-elf-gcc
-OBJCOPY   = i686-elf-objcopy
-NASM      = nasm
-CFLAGS    = -ffreestanding -O0 -g -nostdlib
-INCLUDES  = -Iinclude
-LDFLAGS   = -T linker/linker.ld
+CC = i686-elf-gcc
+AS = nasm
+LD = i686-elf-ld
+OBJCOPY = i686-elf-objcopy
 
-# === Build dirs ===
+# === Directories ===
 BUILD_DIR = build
-ISO_DIR   = iso
+ISO_DIR = iso
+INCLUDE_DIR = include
 
-# === Sources ===
-KERNEL_SRC      = kernel/kernel.c
-BOOT_SRC        = boot/boot.asm
-GDT_C_SRC       = gdt/gdt.c
-GDT_ASM_SRC     = gdt/gdt_flush.asm
-IDT_SRC         = idt/idt.c
-IDT_ASM_SRC		= idt/idt.asm
-ISR_ASM_SRC     = idt/isr/isr.asm
-EXCEPTIONS_SRC  = idt/isr/exceptions.c
-IRQ_ASM_SRC     = idt/irq/irq.asm
-IRQ_SRC         = idt/irq/irq.c
-PIC_SRC         = idt/pic/pic.c
-SERIAL_SRC      = drivers/serial.c
-TIMER_SRC       = drivers/timer.c
-KEYBOARD_SRC    = drivers/keyboard.c
-VGA_SRC         = display/vga_display.c
-PIT_SRC         = pit/pit.c
-MANAGER_SRC     = kernel/memory-management/manager.c
-ALLOCATOR_SRC   = kernel/memory-management/allocator.c
-MM_SRC		= kernel/memory-management/mm.c 
-BUDDY_SRC 		= kernel/memory-management/buddy.c 
-PG_SRC 			= kernel/memory-management/page.asm
-LIST_SRC		= data_structures/list.c
-SLAB_SRC		= kernel/memory-management/slab.c
-TSS_SRC 		= kernel/tss.asm
-TASK_SRC 		= kernel/task.c
-SYSTEM_SRC		= kernel/system.c
-DISK_SRC		= drivers/disk.c
-FS_SRC			= kernel/fs.c
-STRING_SRC 		= kernel/string.c
-MKFS_SRC		= kernel/mkfs.c
-BUFFER_SRC 		= kernel/buffer.c
+# === Compiler Flags ===
+CFLAGS = -ffreestanding -O0 -g -nostdlib -I$(INCLUDE_DIR)
+ASFLAGS = -f elf32
+LDFLAGS = -T linker/linker.ld
 
-# === Objects ===
-OBJS = \
-	$(BUILD_DIR)/boot.o \
-	$(BUILD_DIR)/kernel.o \
-	$(BUILD_DIR)/gdt.o \
-	$(BUILD_DIR)/gdt_flush.o \
-	$(BUILD_DIR)/idt.o \
-	$(BUILD_DIR)/isr_asm.o \
-	$(BUILD_DIR)/idt_asm.o \
-	$(BUILD_DIR)/exceptions.o \
-	$(BUILD_DIR)/irq_asm.o \
-	$(BUILD_DIR)/irq.o \
-	$(BUILD_DIR)/pic.o \
-	$(BUILD_DIR)/serial.o \
-	$(BUILD_DIR)/timer.o \
-	$(BUILD_DIR)/keyboard.o \
-	$(BUILD_DIR)/vga_display.o \
-	$(BUILD_DIR)/pit.o \
-	$(BUILD_DIR)/manager.o \
-	$(BUILD_DIR)/allocator.o \
-	$(BUILD_DIR)/mm.o \
-	$(BUILD_DIR)/buddy.o \
-	$(BUILD_DIR)/page.o \
-	$(BUILD_DIR)/list.o $(BUILD_DIR)/slab.o \
-	$(BUILD_DIR)/tss.o $(BUILD_DIR)/task.o \
-	$(BUILD_DIR)/disk.o $(BUILD_DIR)/system.o \
-	$(BUILD_DIR)/fs.o $(BUILD_DIR)/string.o \
-	$(BUILD_DIR)/mkfs.o $(BUILD_DIR)/buffer.o
+# === Source Directories ===
+# List all directories containing source files here
+SRC_DIRS := \
+    kernel \
+    memory-management \
+    drivers \
+	fs/ufs \
+	fs \
+    kernel/gdt \
+    kernel/idt \
+    kernel/idt/isr \
+    kernel/idt/irq \
+    kernel/idt/pic \
+    kernel/display \
+    drivers/pit \
+    data_structures \
+    boot
 
+# === Automatic Source Discovery ===
+# Find all .c and .asm files in source directories
+C_SRCS := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
+ASM_SRCS := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.asm))
 
-# === Default ===
-all: $(BUILD_DIR)/yegaos.iso check
+# === Object Files ===
+# Flatten paths but keep distinct names:
+# foo.c   -> build/foo.o
+# bar.asm -> build/bar_asm.o  (Prevents collisions like idt.c vs idt.asm)
+C_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(notdir $(C_SRCS)))
+ASM_OBJS := $(patsubst %.asm,$(BUILD_DIR)/%_asm.o,$(notdir $(ASM_SRCS)))
 
-# === Create dirs ===
+OBJS := $(ASM_OBJS) $(C_OBJS)
+
+# === VPATH ===
+# Tell make where to look for source files
+vpath %.c $(SRC_DIRS)
+vpath %.asm $(SRC_DIRS)
+
+# === Targets ===
+.PHONY: all clean run debug
+
+all: $(BUILD_DIR)/yegaos.iso
+
+# === Build Rules ===
+
+# Setup Directories
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-# === Assemble ===
-$(BUILD_DIR)/boot.o: $(BOOT_SRC) | $(BUILD_DIR)
-	$(NASM) -f elf32 $< -o $@
+$(ISO_DIR)/boot/grub:
+	mkdir -p $(ISO_DIR)/boot/grub
 
-$(BUILD_DIR)/gdt_flush.o: $(GDT_ASM_SRC) | $(BUILD_DIR)
-	$(NASM) -f elf32 $< -o $@
+# Compile C files
+$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/isr_asm.o: $(ISR_ASM_SRC) | $(BUILD_DIR)
-	$(NASM) -f elf32 $< -o $@
+# Assemble ASM files (note the _asm.o suffix)
+$(BUILD_DIR)/%_asm.o: %.asm | $(BUILD_DIR)
+	$(AS) $(ASFLAGS) $< -o $@
 
-$(BUILD_DIR)/idt_asm.o: $(IDT_ASM_SRC) | $(BUILD_DIR)
-	$(NASM) -f elf32 $< -o $@
-
-$(BUILD_DIR)/irq_asm.o: $(IRQ_ASM_SRC) | $(BUILD_DIR)
-	$(NASM) -f elf32 $< -o $@
-
-$(BUILD_DIR)/page.o: $(PG_SRC) | $(BUILD_DIR)
-	$(NASM) -f elf32 $< -o $@
-
-# === Compile C ===
-$(BUILD_DIR)/%.o: kernel/%.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/gdt.o: $(GDT_C_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/idt.o: $(IDT_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/exceptions.o: $(EXCEPTIONS_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/irq.o: $(IRQ_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/pic.o: $(PIC_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/serial.o: $(SERIAL_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/timer.o: $(TIMER_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/keyboard.o: $(KEYBOARD_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/vga_display.o: $(VGA_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/pit.o: $(PIT_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/manager.o: $(MANAGER_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/allocator.o: $(ALLOCATOR_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/mm.o: $(MM_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/buddy.o: $(BUDDY_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/list.o: $(LIST_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/slab.o: $(SLAB_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/task.o: $(TASK_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/tss.o: $(TSS_SRC) | $(BUILD_DIR)
-	$(NASM) -f elf32 $< -o $@
-
-$(BUILD_DIR)/system.o: $(SYSTEM_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/disk.o: $(DISK_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/fs.o: $(FS_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/string.o: $(STRING_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/mkfs.o: $(MKFS_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-$(BUILD_DIR)/buffer.o: $(BUFFER_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-# === Link ELF ===
+# Link Kernel
 $(BUILD_DIR)/yegaos.elf: $(OBJS)
 	$(CC) $(LDFLAGS) -o $@ $(CFLAGS) $^ -lgcc
+	@echo "[OK] Linked ELF binary"
 
-# === Flat binary ===
+# Create Binary
 $(BUILD_DIR)/yegaos.bin: $(BUILD_DIR)/yegaos.elf
 	$(OBJCOPY) -O binary $< $@
+	@echo "[OK] Created flat binary"
 
-# === Build ISO ===
-$(BUILD_DIR)/yegaos.iso: \
-    $(BUILD_DIR)/yegaos.elf \
-    $(BUILD_DIR)/yegaos.bin \
-    grub/grub.cfg
-	mkdir -p $(ISO_DIR)/boot/grub
+# Create ISO
+$(BUILD_DIR)/yegaos.iso: $(BUILD_DIR)/yegaos.elf $(BUILD_DIR)/yegaos.bin | $(ISO_DIR)/boot/grub
 	cp $(BUILD_DIR)/yegaos.elf  $(ISO_DIR)/boot/yegaos.elf
 	cp $(BUILD_DIR)/yegaos.bin  $(ISO_DIR)/boot/yegaos.bin
 	cp grub/grub.cfg           $(ISO_DIR)/boot/grub/
-	grub-mkrescue -o $@ $(ISO_DIR) >/dev/null 2>&1
+	grub-mkrescue -o $@ $(ISO_DIR) > /dev/null 2>&1
+	@grub-file --is-x86-multiboot $(BUILD_DIR)/yegaos.elf && echo "[OK] Multiboot compliant" || echo "[ERROR] Not multiboot compliant"
 
-# === Multiboot check ===
-check:
-	@grub-file --is-x86-multiboot $(BUILD_DIR)/yegaos.elf && \
-	  echo "[OK] Multiboot compliant" || \
-	  (echo "[FAIL] Not Multiboot compliant" && exit 1)
+# === Helpers ===
 
-# === Clean ===
+run: $(BUILD_DIR)/yegaos.iso
+	qemu-system-i386 -cdrom $(BUILD_DIR)/yegaos.iso -serial stdio
+
 clean:
 	rm -rf $(BUILD_DIR) $(ISO_DIR)
+	find . -type f -name '*~' -delete
+	@echo "[OK] Cleaned build artifacts"
 
-.PHONY: all check clean
+debug:
+	@echo "Source Dirs: $(SRC_DIRS)"
+	@echo "C Components: $(notdir $(C_SRCS))"
+	@echo "ASM Components: $(notdir $(ASM_SRCS))"
+	@echo "Objects: $(notdir $(OBJS))"
