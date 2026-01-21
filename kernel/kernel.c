@@ -32,9 +32,11 @@
 #include "mm.h"
 #include "task.h"
 #include "disk.h"
-#include "fs.h"
+/* #include "fs.h" */
 #include "string.h"
-#include "vfs.h"
+/* #include "vfs.h" */
+#include "ufs.h"
+#include "buffer.h"
 
 #if defined(__linux__)
 #error                                                                         \
@@ -115,17 +117,20 @@ void kernel_main(uint32_t magic, uint32_t addr) {
     printk("working out hard disk \n");
     test_disk();
 
-    printk("cooking fs\n");
-    /* mkfs(0, 24); */
-
     printk("initializing buffer cache\n");
     create_buffer_cache();
+
+    printk("cooking fs\n");
+    /* mkufs(8); */
 
     printk("initializing inode cache \n");
     create_inode_cache();
 
-    printk("initializing ext2_fs \n");
-    ext2_fs_init();
+    printk("testing fs\n");
+    test_fs();
+    /* printk("initializing ext2_fs \n"); */
+    /* ext2_fs_init(); */
+
 
     terminal_initialize();
     terminal_writestring("Hello, Welcome To Yega Kernel!\n");
@@ -138,3 +143,4 @@ void kernel_main(uint32_t magic, uint32_t addr) {
         asm volatile("hlt");
     }
 }
+
