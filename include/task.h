@@ -2,6 +2,8 @@
 #define _TASK_H
 
 #include "list.h"
+#include "ufs.h"
+// #include "vfs.h"
 
 #define NR_TASKS 10
 typedef int (*fn_ptr)();
@@ -102,10 +104,11 @@ struct task_struct {
     /* commenting now since file system is not ready */
 	// int tty;		/* -1 if no tty, so it must be signed */
 	// unsigned short umask;
-	// struct m_inode * pwd;
-	// struct m_inode * root;
+	struct inode * pwd;
+	struct inode * root;
 	// unsigned long close_on_exec;
-	// struct file * filp[NR_OPEN];
+	struct file * filp[NR_OPEN];
+    int first_free_filp; //file free filp entry to save time
 /* ldt for this task 0 - zero 1 - cs 2 - ds&ss */
 
 	// struct desc_struct ldt[3];
@@ -129,7 +132,11 @@ struct task_struct {
     .gid = 0, .egid = 0, .sgid = 0, \
     .alarm = 0, \
     .utime = 0, .stime = 0, .cutime = 0, .cstime = 0, .start_time = 0, \
-    .used_math = 0 \
+    .used_math = 0,\
+    .pwd = NULL, \
+    .root = NULL, \
+    .filp = 0, \
+    .first_free_filp = 0 \
 }
 
 // /* fs info */	-1,0133,NULL,NULL,0, \
