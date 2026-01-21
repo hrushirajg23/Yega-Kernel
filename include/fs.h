@@ -23,7 +23,7 @@
 #define EXT2_VALID_FS   1
 #define EXT2_ERROR_FS   2
 
-#define EXT2_OS_MOCHI   0xeeee
+#define EXT2_OS_COW   0x100
 
 #define EXT2_ERRORS_RO  2
 
@@ -77,13 +77,49 @@
 #define EXT2_FT_SOCK        6
 #define EXT2_FT_SYMLINK     7
 
-#define EXT2_BLK_SIZE   1024
+#define EXT2_BLK_SIZE 1024
+
+#define EXT2_BLOCKS_PER_GROUP 8192
+
+#define EXT2_BYTES_PER_INODE 8192 // this defines how much bytes each inode will cover at average
+                                  // this is a standard
+
+#define EXT2_INODES_PER_GROUP (( EXT2_BLOCKS_PER_GROUP * EXT2_BLK_SIZE ) \
+        / EXT2_BYTES_PER_INODE )
+
+/*
+ * Why i've added EXT2_BLK_SIZE + 1: 
+ * Reason: 
+ * Assume EXT2_INODES_PER_GROUP = 10
+ *          sizeof(inode_t)     = 128
+ *          EXT2_BLK_SIZE = 1024
+ *
+ *   then inode_table_size = (EXT2_INODES_PER_GROUP * (sizeof(inode_t)) = 1280 bytes
+ *   if I divide , 1280 / EXT2_BLK_SIZE it is equal to 1
+ *   But As you can see 1280 > 1 block size(1024).
+ *   Hence we add extra popcorn for the right calculation.
+ *   Now since you add 
+ *   1280 + EXT2_BLK_SIZE - 1 / EXT2_BLK_SIZE . We get 2
+ *   This is right, since we need two blocks to store 1280 bytes
+ */
+#define EXT2_INODE_TABLE_BLOCKS ((EXT2_INODES_PER_GROUP * (sizeof(inode_t)) + EXT2_BLK_SIZE + 1) \
+       / EXT2_BLK_SIZE) 
+
 
 /* inode flags */
-
 #define INODE_locked 1 << 0
 
+/* conversions */
 
+#define mb_to_lba(mb) ((mb) * 1024 * 2)   // 1 MB = 2048 sectors
+#define kb_to_lba(kb) ((kb) * 2)          // 1 KB = 2 sectors
+#define b_to_lba(b)   ((b) / 512)         // 1 sector = 512 bytes
+
+
+// some macros for starting
+#define BOOT_BLK_NO 0
+#define SUPER_BLK_NO 1
+#define BGDT_BLK_NO 2
 
 /* located at byte offset 1024
  * and 1024 bytes long. */
@@ -210,7 +246,7 @@ typedef struct {
     // index of this file's inode in the inode table.
     // helpful for updating the inode.
     uint32_t inode_n;
-} mochi_file;
+} ext2_file_handle;
 
 
 // make an ext2 filesystem on the disk.
@@ -219,11 +255,6 @@ void mkfs(uint32_t offset, uint32_t len);
 
 // once the metadata is in place, creates the root directory.
 void finish_fs_init(uint32_t mb_start);
-
-
-#define mb_to_lba(mb) ((mb) * 1024 * 2)   // 1 MB = 2048 sectors
-#define kb_to_lba(kb) ((kb) * 2)          // 1 KB = 2 sectors
-#define b_to_lba(b)   ((b) / 512)         // 1 sector = 512 bytes
 
 void read_fs(uint32_t location);
 
@@ -241,10 +272,8 @@ typedef struct {
 
 // given a "path", print the file contents
 void cat(char *path);
-
 int mkdir(char *pathname);
 int rmdir(char *pathname);
-
 int ls(char *path);
 
 /* open file structure.*/
@@ -260,69 +289,60 @@ typedef struct {
     uint8_t flags; 
 } FILE;
 
-// the "file table" (more of a linked list than a table.)
-typedef struct _ft {
-    int fd; // the number associated with this file descriptor.
-    struct _ft *next;
-    struct _ft *prev;
-} ft_entry;
 
 // Global filesystem parameters (set by mkfs/read_fs)
 extern uint32_t g_n_block_groups;
 extern uint32_t g_total_blocks;
 extern uint32_t g_blocks_in_last_group;
 
-// Also add these helpful macros
-#define EXT2_BLK_SIZE 1024
-#define EXT2_BLOCKS_PER_GROUP 8192
-#define EXT2_INODES_PER_GROUP ((214 * EXT2_BLK_SIZE) / sizeof(inode_t))
+// #define hash_fn(bno, devno) (bno % devno)
 
 
-#define hash_fn(bno, devno) (bno % devno)
+// /* BUFFER_CACHE
+//  * ======================================================================================
+//  */
+
+// #define BH_lock 1 << 0
+// #define BH_dirty 1 << 1
+// #define BH_uptodate 1 << 2
+// #define BH_delay 1 << 3
+// #define BH_old 1 << 5
 
 
-/* BUFFER_CACHE
- * ======================================================================================
- */
+// struct buffer_head{
+//     unsigned short flags;
+//     unsigned int b_count; //buffer ref count
+//     char* b_data; //ptr to data //1024 bytes
+//     unsigned short b_dev; //if ==0 means free
+//     unsigned long b_blocknr; //block number
+//     struct list_head b_hash;
+//     struct list_head b_free;
+// };
 
-#define BH_lock 1 << 0
-#define BH_dirty 1 << 1
-#define BH_uptodate 1 << 2
-#define BH_delay 1 << 3
-#define BH_old 1 << 5
-
-
-struct buffer_head{
-    unsigned short flags;
-    unsigned int b_count; //buffer ref count
-    char* b_data; //ptr to data //1024 bytes
-    unsigned short b_dev; //if ==0 means free
-    unsigned long b_blocknr; //block number
-    struct list_head b_hash;
-    struct list_head b_free;
-};
-
-struct buffer_cache {
-    struct list_head b_hash[DEV_NO]; //the buffer hashmap
-    struct list_head b_free; //the freelist
-};
+// struct buffer_cache {
+//     struct list_head b_hash[DEV_NO]; //the buffer hashmap
+//     struct list_head b_free; //the freelist
+// };
 
 
 /* the following are from the Linux manpages.*/
-int open(const char *pathname, int flags);
+int open(const char *pathname, int , int);
 
 uint32_t fs_start_to_lba_superblk(uint32_t mb_start);
-void create_buffer_cache(void);
 
-struct buffer_head *bread(unsigned short dev_no, unsigned long blocknr);
-void bwrite(struct buffer_head *bh);
-void brelse(struct buffer_head *bh);
-struct buffer_head *getblk(unsigned short dev_no, unsigned long blocknr);
-void show_fs(uint32_t mb_start);
+/* buffer cache operations */
+// void create_buffer_cache(void);
+// struct buffer_head *bread(unsigned short dev_no, unsigned long blocknr);
+// void bwrite(struct buffer_head *bh);
+// void brelse(struct buffer_head *bh);
+// struct buffer_head *getblk(unsigned short dev_no, unsigned long blocknr);
+// void show_fs(uint32_t mb_start);
 
 
 /*
  * second extended-fs super-block data in memory
+ * I'm not falling into traps of using fragments and all
+ * all that sh*t later
  */
 struct ext2_sb_info {
 	unsigned long s_frag_size;	/* Size of a fragment in bytes */
@@ -357,30 +377,23 @@ struct ext2_sb_info {
 	unsigned int s_freeblocks_counter;
 	unsigned int s_freeinodes_counter;
 	unsigned int s_dirs_counter;
-	/*
-	 * s_lock protects against concurrent modifications of s_mount_state,
-	 * s_blocks_last, s_overhead_last and the content of superblock's
-	 * buffer pointed to by sbi->s_es.
-	 *
-	 * Note: It is used in ext2_show_options() to provide a consistent view
-	 * of the mount options.
-	 */
 };
+
 int disk_write_blk(uint32_t block_num, uint8_t *buf);
 int disk_read_blk(uint32_t block_num, uint8_t *buf); 
 
 /* ext2 filesystem helper functions (from fs.c) */
 inode_t get_inode(uint32_t inode_n);
 void write_inode_table(uint32_t inode_n, inode_t new_inode);
-uint32_t get_data_block_n(inode_t file, uint32_t i);
+uint32_t indirect_block(inode_t file, uint32_t i);
 int reserve_free_inode(uint32_t *inode_n);
 void unset_inode_bitmap(uint32_t inode_num);
 void set_inode_bitmap(uint32_t inode_num);
 int reserve_free_block(uint32_t *block_n);
 void unset_block_bitmap(uint32_t block_num);
 void set_block_bitmap(uint32_t block_num);
-uint8_t *get_file_block(mochi_file file, uint32_t i);
-int add_dentry(mochi_file dir, dentry_t d);
+uint8_t *get_file_block(ext2_file_handle file, uint32_t i);
+int add_dentry(ext2_file_handle dir, dentry_t d);
 inode_t new_dir_inode(void);
 uint16_t i_block_len(inode_t i);
 
@@ -390,7 +403,10 @@ extern struct inode_operations ext2_file_inode_operations;
 extern struct inode_operations ext2_dir_inode_operations;
 extern struct file_operations ext2_file_operations;
 
+void ext2_fs_init(void);
+
 /* ext2 superblock operations */
+
 struct super_block *ext2_read_super(struct super_block *sb, void *data, int silent);
 void ext2_put_super(struct super_block *sb);
 void ext2_write_super(struct super_block *sb);
@@ -404,8 +420,6 @@ void ext2_read_inode(struct inode *inode);
 int ext2_write_inode(struct inode *inode);
 void ext2_delete_inode(struct inode *inode);
 int ext2_get_block(struct inode *inode, uint32_t block_idx, uint32_t *block_num);
-
-void ext2_fs_init(void);
 #endif
 
 

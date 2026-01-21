@@ -13,6 +13,7 @@
 #define __user
 #endif
 
+#define NR_OPEN 30 //process max file open count
 /*
  * vfs data structures-----------------------------------------------------------------
  */
@@ -53,8 +54,6 @@ struct dentry {
     struct super_block *sb;
     
     struct list_head d_hash; //node for entry in hash of dentyr cache
-
-
 };
 
 struct file_operations {
@@ -152,6 +151,8 @@ releases the inode;
     int (*sync_fs)(struct super_block *sb, int wait);
 };
 
+#define I_DIRTY 1
+
 struct inode {
     struct list_head i_hash;
     struct list_head i_free;
@@ -169,6 +170,7 @@ struct inode {
     unsigned int i_atime; //last accessed time of file
     unsigned int i_mtime; //last modified time of file
     unsigned int i_ctime; //time of last inode change 
+    int i_state; //if dirty or not
     unsigned long i_blocks; //number of blocks of file
     struct inode_operations *i_op; //inode operations 
     struct file_operations *f_op; //def file operations
