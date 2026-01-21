@@ -81,6 +81,7 @@ kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align,
         unsigned int flags,void (*ctor)(void *, kmem_cache_t *, unsigned long));
 void kmem_cache_free(kmem_cache_t *cachep, void *objp);
 void *kmem_cache_alloc(kmem_cache_t *cachep, unsigned int flags);
+void *kmem_cache_zalloc(kmem_cache_t *cachep, unsigned int flags);
 void *kmalloc(size_t size, int flags);
 void kfree(const void *objp);
 void init_slab();
