@@ -121,15 +121,13 @@ void kernel_main(uint32_t magic, uint32_t addr) {
     create_buffer_cache();
 
     printk("cooking fs\n");
-    /* mkufs(8); */
+    mkufs(8);
 
     printk("initializing inode cache \n");
     create_inode_cache();
 
-    printk("testing fs\n");
-    test_fs();
-    /* printk("initializing ext2_fs \n"); */
-    /* ext2_fs_init(); */
+    /* printk("testing fs\n"); */
+    /* test_fs(); */
 
 
     terminal_initialize();

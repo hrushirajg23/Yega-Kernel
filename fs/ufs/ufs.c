@@ -157,14 +157,15 @@ void fill_free_inode_list(s_ufs *super)
 {
     bool bFlag = false;
     struct buffer_head *bh;
-    unsigned long dilb_start = super->s_blk_dilb_start;
+    struct d_inode *dinode;
+
+    unsigned long dilb_start = super->s_blk_dilb_start + 
+        (super->s_remembered_inode / INODES_PER_BLOCK);
     unsigned long dilb_end = super->s_blk_dilb_end;
 
     int dCnt = 0, list_fill_size = super->s_n_free_inodes >= FREE_INODE_LIST 
                ? FREE_INODE_LIST: super->s_n_free_inodes;
 
-
-    struct d_inode *dinode;
     int i_free_cnt = 0;
 
     while (dilb_start <= dilb_end) {
@@ -181,6 +182,7 @@ void fill_free_inode_list(s_ufs *super)
         while (dCnt--) {
             if (dinode->i_mode == 0) {
                 super->s_free_inodes[i_free_cnt++] = dinode->i_no;
+                i_free_cnt++;
                 super->s_next_free_inode++;
             }
             if (i_free_cnt == FREE_INODE_LIST) {
@@ -199,83 +201,7 @@ void fill_free_inode_list(s_ufs *super)
     }
 }
 
-/*
- * algorithm ialloc:
- * assigns a new disk inode to a newly created file
- * An inode is free, if its filetype is 0.
- * To determine the free inodes kernel would have to go through DILB, 
- * which means expensive disk operations search each one linearly. 
- * To avoid this SuperBlock maintains a list of free inodes. 
- * When the list is emptied, its updated immediately on the next allocation
- * operation.
- */
-struct inode *ialloc(short dev_no)
-{
-    while (1) {
-        if (LOCKED(super->s_inode_list_lock)) {
-            //sleep until lock is released
-            continue;
-        }
-
-        if (super->s_next_free_inode == -1) {
-            LOCK(&super->s_inode_list_lock);
-            fill_free_inode_list(super);
-
-        }
-    }
-}
-
-void init_sb(void) 
-{
-    struct buffer_head *bh;
-    bh = bread(DEV_NO, 1);
-    if (!bh) {
-        printk("read super blocked failed \n");
-        return;
-    }
-    super = (s_ufs*)bh->b_data;
-    /* super-> */
-}
-
-
-void make_super(int mb) 
-{
-    int iCnt = 0;
-    unsigned long fs_bytes;
-    unsigned long inode_blocks;
-    struct buffer_head *bh;
-
-    super->s_fs_size = mb; //in mb 
-
-    fs_bytes = (unsigned long)mb * 1024 * 1024;
-
-    //inode count total
-    super->s_total_inodes = fs_bytes / U_BYTES_PER_INODE;
-
-    //inode table(dilb) calculation
-    inode_blocks =
-        (super->s_total_inodes + INODES_PER_BLOCK - 1) /
-        INODES_PER_BLOCK;
-
-    super->s_blk_dilb_start = 2;
-    super->s_blk_dilb_end   = super->s_blk_dilb_start + inode_blocks - 1;
-
-    super->s_inode_list_size = FREE_INODE_LIST;
-
-    super->s_n_free_inodes = super->s_total_inodes;
-    super->s_next_free_inode = FREE_INODE_LIST - 1;
-    for (iCnt = 0; iCnt < FREE_INODE_LIST; iCnt++) {
-        super->s_free_inodes[iCnt] = iCnt;
-    }
-    super->s_remembered_inode = iCnt;
-    super->s_inode_list_lock = 0;
-    super->s_flags = 0;
-
-    /* bwrite(bh); */
-
-}
-
-void init_inode(struct d_inode *dinode, int dev_no, unsigned long i_no, uint32_t blkno)
+void init_dinode(struct d_inode *dinode, int dev_no, unsigned long i_no, uint32_t blkno)
 {
     int iCnt = 0;
     dinode->i_mode = 0;
@@ -299,6 +225,171 @@ void init_inode(struct d_inode *dinode, int dev_no, unsigned long i_no, uint32_t
     dinode->i_faddr = 0;
 }
 
+
+void init_inode(struct inode *inode, int dev_no, unsigned long i_no, uint32_t blkno)
+{
+    init_dinode((struct d_inode*)inode, dev_no, i_no, blkno);
+    INIT_LIST_NULL(&inode->i_hash);
+    INIT_LIST_NULL(&inode->i_free);
+    inode->i_state = 0;
+    inode->i_count = 0;
+}
+
+/*
+ * algorithm ialloc:
+ * assigns a new disk inode to a newly created file
+ * An inode is free, if its filetype is 0.
+ * To determine the free inodes kernel would have to go through DILB, 
+ * which means expensive disk operations search each one linearly. 
+ * To avoid this SuperBlock maintains a list of free inodes. 
+ * When the list is emptied, its updated immediately on the next allocation
+ * operation.
+ */
+struct inode *ialloc(short dev_no)
+{
+    int i_no = 0;
+    struct inode *inode = NULL;
+    while (1) {
+        if (LOCKED(super->s_inode_list_lock)) {
+            //sleep until lock is released
+            continue;
+        }
+
+        if (super->s_next_free_inode == -1) {
+            printk("free inode list in super block is empty \n");
+            LOCK(&super->s_inode_list_lock);
+            fill_free_inode_list(super);
+        }
+        /* free inodes available */
+        i_no = super->s_free_inodes[super->s_next_free_inode--];
+        inode = iget(DEV_NO, i_no);
+        if (!inode) {
+            printk("failed to get inode %d\n", i_no);
+            return NULL;
+        }
+        /* if inode not free after all !!! */
+        /* { */
+        /*    write inode to disk; */
+        /*   release inode;(algorithm iput); */
+        /*     continue; */
+        /* } */ 
+
+        /* inode is free */
+        printk("inode is free\n");
+        uint32_t i_blk = super->s_blk_dilb_start + 
+             (i_no / INODES_PER_BLOCK);
+        init_inode(inode, dev_no, i_no, i_blk);
+        super->s_n_free_inodes--;
+
+        return locked_inode(inode);
+        
+    }
+}
+
+void ifree(short dev_no, unsigned long i_no)
+{
+    super->s_n_free_inodes++;
+    if (LOCKED(super->s_inode_list_lock)) {
+        printk("super block is locked \n");
+        return;
+    }
+    if (super->s_next_free_inode == FREE_INODE_LIST) {
+        if (i_no < super->s_remembered_inode) {
+            super->s_remembered_inode = i_no;
+        }
+    }
+    else {
+        super->s_free_inodes[super->s_next_free_inode++] = i_no;
+    }
+    return;
+}
+
+void make_block_list(unsigned long fs_bytes)
+{
+    
+    unsigned long start_blk = super->s_blk_dilb_end + 1;
+    unsigned long end_blk = (fs_bytes / (unsigned long)U_BLK_SIZE) - 1;
+
+    int bCnt = 0;
+
+    unsigned long iblk = start_blk;;
+    unsigned long iCnt = iblk;
+    unsigned long link_blk = 0;
+    bCnt = FREE_BLOCK_LIST - 1;
+
+    printk("  i_blk = %lu, bCnt = %d\n", iblk, bCnt);
+
+    for (; bCnt >= 0; bCnt--, iblk++ ){
+       super->s_free_blocks[bCnt] = iblk;
+    }
+
+    printk("  iblk = %lu, bCnt = %d\n", iblk, bCnt);
+
+    link_blk = super->s_free_blocks[0];
+    struct buffer_head *bh;
+
+    /* for (; iblk <= end_blk; iblk+= FREE_BLOCK_LIST) { */
+
+    while (iblk <= end_blk) {
+
+        printk("link_blk is %lu \n", link_blk);
+        bh = bread(DEV_NO, link_blk);
+        if (!bh) {
+            printk("failed bread blkno %lu\n", link_blk);
+            return;
+        }
+        
+        bCnt = FREE_BLOCK_LIST - 1;
+
+        for (; iblk <= end_blk && bCnt >= 0; bCnt--, iblk++) {
+            ((unsigned long*)bh->b_data)[bCnt] = iblk;         
+        }
+        link_blk = ((unsigned long*)bh->b_data)[0];
+
+        bwrite(bh);
+    }
+}
+
+void make_super(int mb) 
+{
+    int iCnt = 0;
+    unsigned long fs_bytes;
+    unsigned long inode_blocks;
+    struct buffer_head *bh;
+
+    super->s_fs_size = mb; //in mb 
+
+    fs_bytes = (unsigned long)mb * 1024 * 1024;
+
+    /* inode area */
+    //inode count total
+    super->s_total_inodes = fs_bytes / U_BYTES_PER_INODE;
+
+    //inode table(dilb) calculation
+    inode_blocks =
+        (super->s_total_inodes + INODES_PER_BLOCK - 1) /
+        INODES_PER_BLOCK;
+
+    super->s_blk_dilb_start = 2;
+    super->s_blk_dilb_end   = super->s_blk_dilb_start + inode_blocks - 1;
+
+    super->s_inode_list_size = FREE_INODE_LIST;
+
+    super->s_n_free_inodes = super->s_total_inodes;
+    super->s_next_free_inode = FREE_INODE_LIST - 1;
+    for (iCnt = 0; iCnt < FREE_INODE_LIST; iCnt++) {
+        super->s_free_inodes[iCnt] = iCnt;
+    }
+    super->s_remembered_inode = iCnt;
+    super->s_inode_list_lock = 0;
+    super->s_flags = 0;
+
+    /*  block area */
+    /* remember that data blocks start from next block of s_blk_dilb_end (end of dilb) */
+
+    /* make_block_list(fs_bytes); */
+}
+
 void mkufs(int mb)
 {
     int iCnt = 0, jCnt = 0;
@@ -311,6 +402,9 @@ void mkufs(int mb)
     super = (s_ufs*)bh->b_data;
     printk("making super\n");
     make_super(mb);
+    /* inode part */
+     /* asm volatile("mov %%esp, %0" : "=r"(stack_canary)); */
+    /* printk("mkufs starting, ESP: 0x%x\n", stack_canary); */
 
     for (iCnt = 0; iCnt < super->s_total_inodes; iCnt += INODES_PER_BLOCK) {
 
@@ -325,12 +419,15 @@ void mkufs(int mb)
         }
         for (jCnt = 0; jCnt < INODES_PER_BLOCK; jCnt++) {
             struct d_inode *dinode = (struct d_inode*)binode->b_data + jCnt;
-            init_inode(dinode, DEV_NO, iCnt + jCnt, inodes_block);
+            init_dinode(dinode, DEV_NO, iCnt + jCnt, inodes_block);
         }
         printk("iCnt: %d, jCnt: %d, toal_inodes: %lu\n", iCnt, jCnt, super->s_total_inodes);
 
         bwrite(binode);
     }
+
+    /* block part */
+
 
     bwrite(bh);
 

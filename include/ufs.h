@@ -36,9 +36,17 @@
 #define INODE_MEMBER_BLOCKS 15
 #define NR_OPEN 30
 
-struct ufs_super_block {
-    int s_fs_size;
+#define SUPER_DIRTY 0 << 1
+#define SUPER_MODIFIED 0 << 2
 
+//array size of free block list in super block
+#define FREE_BLOCK_LIST (U_BLK_SIZE / sizeof(unsigned int)) 
+
+struct ufs_super_block {
+    short s_fs_size;
+    short s_flags; //super block flags, like modified, synced, dirty , etc 
+
+    /* inode part */
     uint32_t s_inode_list_size;
     unsigned long s_total_inodes;
     unsigned long s_n_free_inodes; //number of free inodes in the file sys
@@ -46,15 +54,19 @@ struct ufs_super_block {
     int s_next_free_inode; //index of the next free inode in the list
                            //this should be reverse, when it becomes -1
                            //means list has become empty
-    
+
     unsigned long s_remembered_inode;
     char s_inode_list_lock; //lock for free inode list
-   
-   int s_flags; //super block flags, like modified, synced, dirty , etc 
-    
-   int s_blk_dilb_start; //dilb_start block
-   int s_blk_dilb_end; //dilb_end block
-   
+
+    int s_blk_dilb_start; //dilb_start block
+    int s_blk_dilb_end; //dilb_end block
+
+    /* block part */ 
+    char s_block_list_lock; //lock for free block list
+    uint32_t s_n_free_blocks; //total number of free blocks on fs
+    uint32_t s_free_blocks[FREE_BLOCK_LIST];                            
+    int s_next_free_block; //index of the next free block in the list
+
 };
 
 typedef struct ufs_super_block s_ufs;
