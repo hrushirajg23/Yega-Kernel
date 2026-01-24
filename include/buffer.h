@@ -18,7 +18,7 @@
 
 
 struct buffer_head{
-    unsigned short flags;
+    unsigned int flags;
     unsigned int b_count; //buffer ref count
     char* b_data; //ptr to data //1024 bytes
     unsigned short b_dev; //if ==0 means free
