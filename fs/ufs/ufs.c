@@ -53,6 +53,7 @@ int disk_write_blk(uint32_t block_num, uint8_t *buf) {
     for (int i = 0; i < SECTORS_PER_BLOCK; i++) {
         disk_write(lba + i, buf + DISK_SECTOR_SIZE * i, DISK_SECTOR_SIZE);
     }
+    return 0;
 }
 int bmap(struct inode *inode, unsigned long byte_offset)
 {
@@ -328,9 +329,7 @@ void make_block_list(unsigned long fs_bytes)
     link_blk = super->s_free_blocks[0];
     struct buffer_head *bh;
 
-    /* for (; iblk <= end_blk; iblk+= FREE_BLOCK_LIST) { */
-
-    while (iblk <= end_blk) {
+    for (; iblk <= end_blk; iblk+= FREE_BLOCK_LIST) {
 
         printk("link_blk is %lu \n", link_blk);
         bh = bread(DEV_NO, link_blk);
@@ -340,9 +339,10 @@ void make_block_list(unsigned long fs_bytes)
         }
         
         bCnt = FREE_BLOCK_LIST - 1;
+        iCnt = iblk;
 
-        for (; iblk <= end_blk && bCnt >= 0; bCnt--, iblk++) {
-            ((unsigned long*)bh->b_data)[bCnt] = iblk;         
+        for (; iCnt <= end_blk && bCnt >= 0; bCnt--, iCnt++){
+            ((unsigned long*)bh->b_data)[bCnt] = iCnt;         
         }
         link_blk = ((unsigned long*)bh->b_data)[0];
 
@@ -387,7 +387,7 @@ void make_super(int mb)
     /*  block area */
     /* remember that data blocks start from next block of s_blk_dilb_end (end of dilb) */
 
-    /* make_block_list(fs_bytes); */
+    make_block_list(fs_bytes);
 }
 
 void mkufs(int mb)
@@ -402,9 +402,9 @@ void mkufs(int mb)
     super = (s_ufs*)bh->b_data;
     printk("making super\n");
     make_super(mb);
+
+    
     /* inode part */
-     /* asm volatile("mov %%esp, %0" : "=r"(stack_canary)); */
-    /* printk("mkufs starting, ESP: 0x%x\n", stack_canary); */
 
     for (iCnt = 0; iCnt < super->s_total_inodes; iCnt += INODES_PER_BLOCK) {
 
@@ -421,15 +421,14 @@ void mkufs(int mb)
             struct d_inode *dinode = (struct d_inode*)binode->b_data + jCnt;
             init_dinode(dinode, DEV_NO, iCnt + jCnt, inodes_block);
         }
-        printk("iCnt: %d, jCnt: %d, toal_inodes: %lu\n", iCnt, jCnt, super->s_total_inodes);
+        printk("iCnt: %d, jCnt: %d\n", iCnt, jCnt);
 
         bwrite(binode);
     }
-
-    /* block part */
-
-
+    
     bwrite(bh);
+    
+    /* block part */
 
 }
 
@@ -686,7 +685,7 @@ void test_fs(void)
 {
     s_ufs *sb;
     struct buffer_head *bh;
-
+    struct buffer_head *btest[2];
     bh = bread(DEV_NO, 1);
     if (!bh) {
         printk("failed bread for block 1\n");
@@ -695,6 +694,36 @@ void test_fs(void)
     sb = (s_ufs*)bh->b_data;
     display_sb(sb);
 
+    printk("tesint dilb==========================\n");
+    for (int iCnt = 0; iCnt < 2; iCnt++) {
+        btest[iCnt] = bread(DEV_NO, (unsigned long)(sb->s_blk_dilb_start + iCnt));
+        if (!btest[iCnt]) {
+            printk("bread failed at blkno %lu\n", sb->s_blk_dilb_start + iCnt);
+        }
+        struct d_inode *dinode = (struct d_inode*)btest[iCnt]->b_data;
+        for (int jCnt = 0; jCnt < U_BLK_SIZE / sizeof(struct d_inode); jCnt++) {
+            printk("jCnt : %d, inode: %u, imode: %d\n", jCnt, dinode[jCnt].i_no, (int)dinode[jCnt].i_mode);
+        }
+        brelse(btest[iCnt]);
+    }
+    printk("done tesint dilb==========================\n");
+
+    printk("testing data blocks==================\n");
+
+    const int link_blk = 7681; //try with any link block multiple of that starts from super->s_blk_dilb_end + 1 + x*256
+    for (int iCnt = 0; iCnt < 1; iCnt++) {
+
+        btest[iCnt] = bread(DEV_NO, (unsigned long)(link_blk + (1+iCnt) * FREE_BLOCK_LIST));
+        if (!btest[iCnt]) {
+            printk("bread failed at blkno %lu\n", link_blk + (1+iCnt) * FREE_BLOCK_LIST);
+        }
+        unsigned long *ptr = (unsigned long*)btest[iCnt]->b_data;
+        for (int jCnt = 0; jCnt < U_BLK_SIZE / sizeof(unsigned long); jCnt++) {
+            printk("jCnt : %d, block: %lu\n", jCnt, ptr[jCnt]);
+        }
+        brelse(btest[iCnt]);
+    }
+    printk("done testing data blocks==================\n");
     brelse(bh);
 }
 
