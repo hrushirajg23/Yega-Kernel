@@ -27,6 +27,7 @@
 
 #define LOCKED(var) ((var == 1 ? 1 : 0))
 #define LOCK(var) (*var = 1)
+#define UNLOCK(var) (*var = 0)
 
 #define DEV_NO 4
 
@@ -40,7 +41,7 @@
 #define SUPER_MODIFIED 0 << 2
 
 //array size of free block list in super block
-#define FREE_BLOCK_LIST (U_BLK_SIZE / sizeof(unsigned int)) 
+#define FREE_BLOCK_LIST (U_BLK_SIZE / sizeof(unsigned long)) 
 
 struct ufs_super_block {
     short s_fs_size;
@@ -145,7 +146,8 @@ void create_inode_cache(void);
 struct inode *iget(unsigned short dev_no, unsigned int inum);
 void iput(struct inode *inode);
 void mkufs(int mb);
-void test_fs(void);
+void init_fs(void);
+void test_fs(s_ufs *);
 
 
 

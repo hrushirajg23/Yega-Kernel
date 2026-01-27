@@ -319,19 +319,15 @@ void make_block_list(unsigned long fs_bytes)
     bCnt = FREE_BLOCK_LIST - 1;
 
     printk("  i_blk = %lu, bCnt = %d\n", iblk, bCnt);
-
     for (; bCnt >= 0; bCnt--, iblk++ ){
        super->s_free_blocks[bCnt] = iblk;
     }
-
-    printk("  iblk = %lu, bCnt = %d\n", iblk, bCnt);
 
     link_blk = super->s_free_blocks[0];
     struct buffer_head *bh;
 
     for (; iblk <= end_blk; iblk+= FREE_BLOCK_LIST) {
 
-        printk("link_blk is %lu \n", link_blk);
         bh = bread(DEV_NO, link_blk);
         if (!bh) {
             printk("failed bread blkno %lu\n", link_blk);
@@ -377,6 +373,8 @@ void make_super(int mb)
 
     super->s_n_free_inodes = super->s_total_inodes;
     super->s_next_free_inode = FREE_INODE_LIST - 1;
+    /* Initialize free block index */
+    super->s_next_free_block = FREE_BLOCK_LIST - 1;
     for (iCnt = 0; iCnt < FREE_INODE_LIST; iCnt++) {
         super->s_free_inodes[iCnt] = iCnt;
     }
@@ -680,18 +678,86 @@ void display_sb(s_ufs *sb)
     printk("=====================================\n");
 }
 
-
-void test_fs(void)
+struct buffer_head *balloc(unsigned short dev_no)
 {
-    s_ufs *sb;
+    unsigned long blk_no;
     struct buffer_head *bh;
-    struct buffer_head *btest[2];
-    bh = bread(DEV_NO, 1);
-    if (!bh) {
-        printk("failed bread for block 1\n");
-        return;
+    while (LOCKED(super->s_block_list_lock)) {
+        continue;
     }
-    sb = (s_ufs*)bh->b_data;
+
+    blk_no = super->s_free_blocks[super->s_next_free_block--];
+    if (super->s_next_free_block == -1) {
+        LOCK(&super->s_block_list_lock);
+        bh = bread(DEV_NO, blk_no);
+        if (!bh) {
+            printk("failed bread for blkno %lu\n", blk_no);
+            return NULL;
+        }
+        printk("super free block is empty , now filling data from blkno: %lu\n", blk_no);
+        unsigned long *ptr = (unsigned long*)bh->b_data;
+        int blocks = FREE_BLOCK_LIST;
+        int iCnt = 0;
+        for (iCnt = 0; iCnt < blocks; iCnt++) {
+            super->s_free_blocks[iCnt] = ptr[iCnt];
+        }
+        super->s_next_free_block = blocks - 1;
+        brelse(bh);
+        UNLOCK(&super->s_block_list_lock);
+        //wakeup all processes waiting for buffer
+    }
+    bh = getblk(DEV_NO, blk_no);
+    if (!bh) {
+        printk("getblk failed for blkno %lu\n", blk_no);
+        return NULL;
+    }
+    /* memset(bh->b_data, 0, U_BLK_SIZE); */
+    super->s_n_free_blocks--;
+    SET_FLAG(super->s_flags, SUPER_MODIFIED);
+    return bh;
+}
+
+void bfree(unsigned long blk_no)
+{
+    while (LOCKED(super->s_block_list_lock)) {
+        printk("super block free block list is locked \n");
+        continue;
+    }
+
+    LOCK(&super->s_block_list_lock);
+
+    if (super->s_next_free_block >= FREE_BLOCK_LIST) {
+        struct buffer_head *bh;
+        bh = bread(DEV_NO, blk_no);
+        if (!bh) {
+            printk("failed bread for blkno %lu\n", blk_no);
+            return;
+        }
+        unsigned long *ptr = (unsigned long*)bh->b_data;
+        int blocks = FREE_BLOCK_LIST;
+        int iCnt = 0;
+        for (iCnt = 0; iCnt < blocks; iCnt++) {
+            ptr[iCnt] = super->s_free_blocks[iCnt];
+        }
+        super->s_free_blocks[0] = blk_no;
+        super->s_next_free_block = 0;
+        bwrite(bh);
+    } 
+    else {
+        super->s_free_blocks[super->s_next_free_block++] = blk_no;
+    }
+
+    UNLOCK(&super->s_block_list_lock);
+}
+
+
+
+void test_fs(s_ufs *sb)
+{
+    /* Update global super pointer to point to valid buffer data */
+    super = sb; 
+
+    struct buffer_head *btest[2];
     display_sb(sb);
 
     printk("tesint dilb==========================\n");
@@ -710,12 +776,12 @@ void test_fs(void)
 
     printk("testing data blocks==================\n");
 
-    const int link_blk = 7681; //try with any link block multiple of that starts from super->s_blk_dilb_end + 1 + x*256
-    for (int iCnt = 0; iCnt < 1; iCnt++) {
+    const int link_blk = 513; //try with any link block multiple of that starts from super->s_blk_dilb_end + 1 + x*256
+    for (int iCnt = 0; iCnt < 2; iCnt++) {
 
-        btest[iCnt] = bread(DEV_NO, (unsigned long)(link_blk + (1+iCnt) * FREE_BLOCK_LIST));
+        btest[iCnt] = bread(DEV_NO, (unsigned long)(link_blk + (iCnt * FREE_BLOCK_LIST)));
         if (!btest[iCnt]) {
-            printk("bread failed at blkno %lu\n", link_blk + (1+iCnt) * FREE_BLOCK_LIST);
+            printk("bread failed at blkno %lu\n", link_blk  + (iCnt * FREE_BLOCK_LIST));
         }
         unsigned long *ptr = (unsigned long*)btest[iCnt]->b_data;
         for (int jCnt = 0; jCnt < U_BLK_SIZE / sizeof(unsigned long); jCnt++) {
@@ -724,6 +790,56 @@ void test_fs(void)
         brelse(btest[iCnt]);
     }
     printk("done testing data blocks==================\n");
-    brelse(bh);
+
+    printk("testing alloc and free===========\n");
+
+    int iCnt = 0;
+    struct buffer_head *bh[98];
+    for (iCnt = 0; iCnt < 258; iCnt++) {
+       bh[iCnt % 98] = balloc(DEV_NO);
+        if (!bh[iCnt % 98]) {
+           printk("balloc failed at iCnt: %d\n", iCnt);
+          return;
+        } 
+      printk("balloc got me %lu\n", bh[iCnt % 98]->b_blocknr);
+      if ((iCnt + 1) % 98 == 0)
+      {
+            int jCnt = 0;
+            for (jCnt = 0; jCnt < 98; jCnt++) {
+                bwrite(bh[jCnt]);
+                //bfree(bh[jCnt]->b_blocknr);
+            }
+      }
+      if (iCnt % 256 == 0) {
+          printk("round %d  finished================\n", iCnt % 256);
+      }
+    }
+    
+    // flush remaining
+    int remaining = iCnt % 98;
+    for (int jCnt = 0; jCnt < remaining; jCnt++) {
+        bwrite(bh[jCnt]);
+        /* bfree(bh[jCnt]->b_blocknr); */
+    }
+    /* iCnt = 770; */
+    /* for (; iCnt>= 513; iCnt--){ */
+    /*     bfree((unsigned long)iCnt); */
+    /* } */
+   
 }
 
+void init_fs(void)
+{
+    s_ufs *sb;
+    struct buffer_head *bh;
+    bh = bread(DEV_NO, 1);
+    if (!bh) {
+        printk("failed bread for block 1\n");
+        return;
+    }
+    sb = (s_ufs*)bh->b_data;
+    test_fs(sb);
+
+    /* never release super block */
+    /* brelse(bh); */
+}
