@@ -132,6 +132,22 @@ struct inode {
     uint32_t i_count; //reference count
 };
 
+struct file {
+    struct inode *f_inode;
+    struct list_head f_list; //pointers for generic file object list
+    unsigned int f_count; //file object's reference counter
+    unsigned int f_flags; //flags specified when opening the file 
+    unsigned short f_mode; //process access mode
+    loff_t f_pos; //current file offset
+};
+
+
+#define INCORE_TABLE 50 //incore inode table size
+struct incore_table {
+    struct inode **table;
+    int size;
+};
+
 static inline struct inode *locked_inode(struct inode *inode) {
     SET_FLAG(inode->i_flags, I_lock);
     return inode;

@@ -9,7 +9,6 @@
 #include "kernel.h"
 #include "buffer.h"
 #include "task.h"
-
 #include <stdint.h>
 
 #define SECTORS_PER_BLOCK   (U_BLK_SIZE / DISK_SECTOR_SIZE)
@@ -17,16 +16,19 @@
 #define SUPERBLOCK_OFFSET   SECTORS_PER_BLOCK
 #define INODES_PER_BLOCK (U_BLK_SIZE / sizeof(struct d_inode))
 
-#define INODES 30 //total no of inodes present in hashqueues 
+#define INODES 50 //total no of inodes present in hashqueues 
 
 extern struct task_struct *current;
 uint32_t filesys_start = 0;
 uint8_t fs_start_set = 1;
+struct incore_table itable;
 
 s_ufs *super = NULL;
 
 kmem_cache_t *inode_cache;
 kmem_cache_t *file_cache; //for file table entries
+
+LIST_HEAD(file_table);
 
 struct inode_cache {
     struct list_head i_hash[DEV_NO];
@@ -55,6 +57,7 @@ int disk_write_blk(uint32_t block_num, uint8_t *buf) {
     }
     return 0;
 }
+
 int bmap(struct inode *inode, unsigned long byte_offset)
 {
     return byte_offset / U_BLK_SIZE;
@@ -262,12 +265,14 @@ struct inode *ialloc(short dev_no)
             fill_free_inode_list(super);
         }
         /* free inodes available */
+        
         i_no = super->s_free_inodes[super->s_next_free_inode--];
         inode = iget(DEV_NO, i_no);
         if (!inode) {
             printk("failed to get inode %d\n", i_no);
             return NULL;
         }
+        printk("got inode number %d\n", i_no);
         /* if inode not free after all !!! */
         /* { */
         /*    write inode to disk; */
@@ -281,6 +286,7 @@ struct inode *ialloc(short dev_no)
              (i_no / INODES_PER_BLOCK);
         init_inode(inode, dev_no, i_no, i_blk);
         super->s_n_free_inodes--;
+        printk("inode ok\n");
 
         return locked_inode(inode);
         
@@ -401,14 +407,13 @@ void mkufs(int mb)
     printk("making super\n");
     make_super(mb);
 
-    
     /* inode part */
 
     for (iCnt = 0; iCnt < super->s_total_inodes; iCnt += INODES_PER_BLOCK) {
 
         uint32_t inodes_block = (iCnt / INODES_PER_BLOCK) 
             + super->s_blk_dilb_start; 
-        printk("iCnt: %d, its_block: %d\n", iCnt, inodes_block);
+        /* printk("iCnt: %d, its_block: %d\n", iCnt, inodes_block); */
         struct buffer_head *binode = NULL;
         binode = bread(DEV_NO, inodes_block);
         if (!binode) {
@@ -419,11 +424,11 @@ void mkufs(int mb)
             struct d_inode *dinode = (struct d_inode*)binode->b_data + jCnt;
             init_dinode(dinode, DEV_NO, iCnt + jCnt, inodes_block);
         }
-        printk("iCnt: %d, jCnt: %d\n", iCnt, jCnt);
+        /* printk("iCnt: %d, jCnt: %d\n", iCnt, jCnt); */
 
         bwrite(binode);
     }
-    
+
     bwrite(bh);
     
     /* block part */
@@ -483,23 +488,34 @@ void write_inode(struct inode *inode)
 void display_inode_cache(void) 
 {
     int iCnt = 0;
+    struct list_head *run;
+    struct inode *inode;
+
     for (; iCnt < DEV_NO; iCnt++) {
-        struct list_head *run;
-        struct inode *inode;
-        printk("================ i_hash %d=================\n", iCnt);
+             printk("================ i_hash %d=================\n", iCnt);
         list_for_each(run, &i_cache.i_hash[iCnt]) {
             inode = list_entry(run, struct inode, i_hash);
             printk("<= %d => ", inode->i_no);
         }
         printk("\n");
     }
+    printk("\n=================== i_free ========================\n");
+    list_for_each(run, &i_cache.i_free) {
+        inode = list_entry(run, struct inode, i_free);
+        printk("<= %d => ", inode->i_no);
+    }
+    printk("\n=================== i_free ========================\n");
+    printk("\n");
+
 }
-static struct inode *search_hash(unsigned short dev_no, unsigned long inum)
+static struct inode *search_inode_hash(unsigned short dev_no, unsigned long inum)
 {
+    printk("search inode %lu in hash\n", inum);
     struct inode *inode = NULL;
     struct list_head *run;
-    int index = hash_fn(inum, dev_no);
+    int index = hash_fn((int)inum, dev_no);
 
+    printk(" inode is at index %d\n", index);
     list_for_each(run, &i_cache.i_hash[index]) {
         inode = list_entry(run, struct inode, i_hash);
         if (inode->i_no == inum && inode->i_dev == dev_no) {
@@ -507,7 +523,7 @@ static struct inode *search_hash(unsigned short dev_no, unsigned long inum)
             return inode;
         }
     }
-    printk("search_hash failed\n");
+    printk("search_inode hash failed\n");
     return NULL;
 }
 
@@ -515,6 +531,7 @@ static struct inode *search_hash(unsigned short dev_no, unsigned long inum)
 void inode_init(struct inode *inode, unsigned short dev_no, unsigned long inum)
 {
     INIT_LIST_NULL(&inode->i_hash);
+    INIT_LIST_NULL(&inode->i_free);
     inode->i_no = inum;
     inode->i_dev = dev_no;
     inode->i_count = 0;
@@ -541,15 +558,26 @@ void test_icache(void)
     printk("iget passed inode->i_no : %d\n", inode->i_no);
    
 }
+void init_file(void *fobj, kmem_cache_t *cachep, unsigned long no)
+{
+    struct file *file = (struct file*)fobj;
+    file->f_inode = NULL;
+    INIT_LIST_NULL(&file->f_list);
+    file->f_count = 0;
+    file->f_flags = 0;
+    file->f_mode = 0;
+    file->f_pos = 0;
+}
 
-/* void create_file_cache(void) */
-/* { */
-/*     file_cache = kmem_cache_create("file", sizeof(struct file), KMALLOC_MINALIGN, SLAB_HWCACHE_ALIGN, NULL); */
-/*     if (!file_cache) { */
-/*         printk("failed kmem_cache_create for file_cache \n"); */
-/*         return; */
-/*     } */
-/* } */
+void create_file_cache(void)
+{
+    file_cache = kmem_cache_create("file", sizeof(struct file), KMALLOC_MINALIGN, SLAB_HWCACHE_ALIGN, init_file);
+    if (!file_cache) {
+        printk("failed kmem_cache_create for file_cache \n");
+        return;
+    }
+}
+
 void create_inode_cache(void)
 {
 
@@ -562,14 +590,17 @@ void create_inode_cache(void)
         return;
     }
 
-    /* create_file_cache(); */
+    create_file_cache();
 
     for (iCnt = 0; iCnt < DEV_NO; iCnt++) {
         INIT_LIST_HEAD(&i_cache.i_hash[iCnt]);
     }
     INIT_LIST_HEAD(&i_cache.i_free);
+    /*
+     * inodes must start from 1 and not 0
+     */
 
-    for (iCnt = 0; iCnt < INODES; iCnt++) {
+    for (iCnt = 1; iCnt <= INODES; iCnt++) {
         tmp = kmem_cache_alloc(inode_cache, 0); 
         if (!tmp) {
             printk("failed allocating inode for %d\n", iCnt);
@@ -591,35 +622,46 @@ void create_inode_cache(void)
 
 struct inode *iget(unsigned short dev_no, unsigned int inum)
 {
+    printk("getting inode no: %d\n", inum);
     struct inode *inode = NULL;
     while (1) {
-        inode = search_hash(dev_no, inum); 
+        inode = search_inode_hash(dev_no, inum); 
         if (inode) {
             if (IS_FLAG(inode->i_flags, I_lock)) {
                 /*
                  * sleep (event this inode becomes free )
                  */
+                printk("inode locked\n");
                 continue;
             }
             if (inode->i_count == 0) { //inode is on free list
+                printk("inode is on free list\n");
                 list_del(&inode->i_free);  
             }
+            printk("returning inode\n");
             inode->i_count++;
             return locked_inode(inode);
         }
 
         if (list_is_empty(&i_cache.i_free)) {
+            printk("inode free list is empty\n");
             return NULL;
         }
 
+        printk(" 1\n");
         list_del(&inode->i_free);
         inode->i_no = inum;
+        printk(" 2\n");
         /* ino->dev_no = dev_no; */
         list_del(&inode->i_hash);
-        list_add(&i_cache.i_hash[hash_fn(dev_no, inode->i_no)], &inode->i_hash); 
+        list_add(&i_cache.i_hash[hash_fn(inode->i_no, dev_no)], &inode->i_hash); 
+
+        printk(" 3\n");
         //read inode from disk via bread at core 
         /* ext2_read_inode(inode); */ 
         read_inode(inode);
+
+        printk(" 4\n");
         inode->i_count++; 
 
         return locked_inode(inode);
@@ -674,6 +716,16 @@ void display_sb(s_ufs *sb)
         printk("%u ", sb->s_free_inodes[i]);
     }
     printk("\n");
+
+    printk("Free blocks: %u\n", sb->s_n_free_blocks);
+    printk("Next free block: %d\n", sb->s_next_free_block);
+
+    printk("Free inode list        : ");
+    for (i = 0; i < FREE_BLOCK_LIST; i++) {
+        printk("%lu ", sb->s_free_blocks[i]);
+    }
+    printk("\n");
+
 
     printk("=====================================\n");
 }
@@ -760,67 +812,67 @@ void test_fs(s_ufs *sb)
     struct buffer_head *btest[2];
     display_sb(sb);
 
-    printk("tesint dilb==========================\n");
-    for (int iCnt = 0; iCnt < 2; iCnt++) {
-        btest[iCnt] = bread(DEV_NO, (unsigned long)(sb->s_blk_dilb_start + iCnt));
-        if (!btest[iCnt]) {
-            printk("bread failed at blkno %lu\n", sb->s_blk_dilb_start + iCnt);
-        }
-        struct d_inode *dinode = (struct d_inode*)btest[iCnt]->b_data;
-        for (int jCnt = 0; jCnt < U_BLK_SIZE / sizeof(struct d_inode); jCnt++) {
-            printk("jCnt : %d, inode: %u, imode: %d\n", jCnt, dinode[jCnt].i_no, (int)dinode[jCnt].i_mode);
-        }
-        brelse(btest[iCnt]);
-    }
-    printk("done tesint dilb==========================\n");
+    /* printk("tesint dilb==========================\n"); */
+    /* for (int iCnt = 0; iCnt < 2; iCnt++) { */
+    /*     btest[iCnt] = bread(DEV_NO, (unsigned long)(sb->s_blk_dilb_start + iCnt)); */
+    /*     if (!btest[iCnt]) { */
+    /*         printk("bread failed at blkno %lu\n", sb->s_blk_dilb_start + iCnt); */
+    /*     } */
+    /*     struct d_inode *dinode = (struct d_inode*)btest[iCnt]->b_data; */
+    /*     for (int jCnt = 0; jCnt < U_BLK_SIZE / sizeof(struct d_inode); jCnt++) { */
+    /*         printk("jCnt : %d, inode: %u, imode: %d\n", jCnt, dinode[jCnt].i_no, (int)dinode[jCnt].i_mode); */
+    /*     } */
+    /*     brelse(btest[iCnt]); */
+    /* } */
+    /* printk("done tesint dilb==========================\n"); */
 
-    printk("testing data blocks==================\n");
+    /* printk("testing data blocks==================\n"); */
 
-    const int link_blk = 513; //try with any link block multiple of that starts from super->s_blk_dilb_end + 1 + x*256
-    for (int iCnt = 0; iCnt < 2; iCnt++) {
+    /* const int link_blk = 513; //try with any link block multiple of that starts from super->s_blk_dilb_end + 1 + x*256 */
+    /* for (int iCnt = 0; iCnt < 2; iCnt++) { */
 
-        btest[iCnt] = bread(DEV_NO, (unsigned long)(link_blk + (iCnt * FREE_BLOCK_LIST)));
-        if (!btest[iCnt]) {
-            printk("bread failed at blkno %lu\n", link_blk  + (iCnt * FREE_BLOCK_LIST));
-        }
-        unsigned long *ptr = (unsigned long*)btest[iCnt]->b_data;
-        for (int jCnt = 0; jCnt < U_BLK_SIZE / sizeof(unsigned long); jCnt++) {
-            printk("jCnt : %d, block: %lu\n", jCnt, ptr[jCnt]);
-        }
-        brelse(btest[iCnt]);
-    }
-    printk("done testing data blocks==================\n");
+    /*     btest[iCnt] = bread(DEV_NO, (unsigned long)(link_blk + (iCnt * FREE_BLOCK_LIST))); */
+    /*     if (!btest[iCnt]) { */
+    /*         printk("bread failed at blkno %lu\n", link_blk  + (iCnt * FREE_BLOCK_LIST)); */
+    /*     } */
+    /*     unsigned long *ptr = (unsigned long*)btest[iCnt]->b_data; */
+    /*     for (int jCnt = 0; jCnt < U_BLK_SIZE / sizeof(unsigned long); jCnt++) { */
+    /*         printk("jCnt : %d, block: %lu\n", jCnt, ptr[jCnt]); */
+    /*     } */
+    /*     brelse(btest[iCnt]); */
+    /* } */
+    /* printk("done testing data blocks==================\n"); */
 
-    printk("testing alloc and free===========\n");
+    /* printk("testing alloc and free===========\n"); */
 
-    int iCnt = 0;
-    struct buffer_head *bh[98];
-    for (iCnt = 0; iCnt < 258; iCnt++) {
-       bh[iCnt % 98] = balloc(DEV_NO);
-        if (!bh[iCnt % 98]) {
-           printk("balloc failed at iCnt: %d\n", iCnt);
-          return;
-        } 
-      printk("balloc got me %lu\n", bh[iCnt % 98]->b_blocknr);
-      if ((iCnt + 1) % 98 == 0)
-      {
-            int jCnt = 0;
-            for (jCnt = 0; jCnt < 98; jCnt++) {
-                bwrite(bh[jCnt]);
-                //bfree(bh[jCnt]->b_blocknr);
-            }
-      }
-      if (iCnt % 256 == 0) {
-          printk("round %d  finished================\n", iCnt % 256);
-      }
-    }
+    /* int iCnt = 0; */
+    /* struct buffer_head *bh[98]; */
+    /* for (iCnt = 0; iCnt < 258; iCnt++) { */
+    /*    bh[iCnt % 98] = balloc(DEV_NO); */
+    /*     if (!bh[iCnt % 98]) { */
+    /*        printk("balloc failed at iCnt: %d\n", iCnt); */
+    /*       return; */
+    /*     } */ 
+    /*   printk("balloc got me %lu\n", bh[iCnt % 98]->b_blocknr); */
+    /*   if ((iCnt + 1) % 98 == 0) */
+    /*   { */
+    /*         int jCnt = 0; */
+    /*         for (jCnt = 0; jCnt < 98; jCnt++) { */
+    /*             bwrite(bh[jCnt]); */
+    /*             //bfree(bh[jCnt]->b_blocknr); */
+    /*         } */
+    /*   } */
+    /*   if (iCnt % 256 == 0) { */
+    /*       printk("round %d  finished================\n", iCnt % 256); */
+    /*   } */
+    /* } */
     
-    // flush remaining
-    int remaining = iCnt % 98;
-    for (int jCnt = 0; jCnt < remaining; jCnt++) {
-        bwrite(bh[jCnt]);
-        /* bfree(bh[jCnt]->b_blocknr); */
-    }
+    /* // flush remaining */
+    /* int remaining = iCnt % 98; */
+    /* for (int jCnt = 0; jCnt < remaining; jCnt++) { */
+    /*     bwrite(bh[jCnt]); */
+    /*     /1* bfree(bh[jCnt]->b_blocknr); *1/ */
+    /* } */
     /* iCnt = 770; */
     /* for (; iCnt>= 513; iCnt--){ */
     /*     bfree((unsigned long)iCnt); */
@@ -828,8 +880,89 @@ void test_fs(s_ufs *sb)
    
 }
 
+int allocate_file(struct inode *inode)
+{
+    int fd = -1;
+    int iCnt = 0;
+    if (current->first_free_filp == NR_OPEN) {
+        printk("maximum files opened, cannot open more\n");
+        return -1;
+    }
+    //allocate inode entry in inode table
+    for (iCnt = 0; iCnt < INCORE_TABLE; iCnt++) {
+        if (itable.table[iCnt] == NULL) {
+            itable.table[iCnt] = inode;
+        }
+    }
+    struct file *file = kmem_cache_alloc(file_cache, 0);
+    if (!file) {
+        printk("file object allocation failed\n");
+        return -1;
+    }
+    
+    fd = current->first_free_filp;
+    current->filp[current->first_free_filp++] = file; //allocated ufdt entry 
+    file->f_inode = inode; //allocate file table entry
+    list_add_tail(&file_table, &file->f_list);
+
+    return fd;
+}
+
+void create_entry(const char *entry_name, struct buffer_head *bh,
+        unsigned long offset, unsigned long inode_no)
+{
+    char *ptr = (char*)bh->b_data;
+    *(unsigned long*)(ptr + offset) = inode_no;
+    strcpy(ptr + offset + DIR_ENTRY_INODE_SIZE, entry_name);
+}
+
+int create_root(void)
+{
+    printk("Creating ROOT directory\n");
+    struct inode *inode = iget(DEV_NO, 1);
+    if (!inode) {
+        printk("failed to get inode 1\n");
+        return -1;
+    }
+    read_inode(inode);
+    struct buffer_head *bh;
+    bh = balloc(DEV_NO);
+    if (!bh) {
+        printk("failed to allocate a disk block\n");
+        return -1;
+    }
+    inode->i_blocks[0] = bh->b_blocknr;
+
+    char *root_names[] = {".", "..", "dev", "etc", "usr", "mnt", "bin", "boot", "home"};
+    int iCnt = 0, root_list_size = sizeof(root_names);
+    for (iCnt = 0; iCnt < root_list_size; iCnt++) {
+        printk("creating directory : %s\n", root_names[iCnt]);
+        if (strcmp(root_names[iCnt], "..") == 0 ||
+                strcmp(root_names[iCnt], ".") == 0) {
+            create_entry(root_names[iCnt], bh, iCnt * DIR_ENTRY_BYTES, (unsigned long)1);
+            if (strcmp(root_names[iCnt], ".") == 0) {
+                allocate_file(inode);
+            }
+        }
+        else {
+            struct inode *ientry = ialloc(DEV_NO);
+            if (!ientry) {
+                printk("ialloc failed in creating root directory\n");
+                return -1;
+            }
+            create_entry(root_names[iCnt], bh, iCnt * DIR_ENTRY_BYTES, ientry->i_no);
+            allocate_file(ientry);
+            iput(ientry);
+        }
+    }
+    bwrite(bh);
+    return 0;
+}
+
+
 void init_fs(void)
 {
+    int iRet = 0;
     s_ufs *sb;
     struct buffer_head *bh;
     bh = bread(DEV_NO, 1);
@@ -840,6 +973,26 @@ void init_fs(void)
     sb = (s_ufs*)bh->b_data;
     test_fs(sb);
 
+    itable.table = (struct inode**)kzalloc(INCORE_TABLE, 0);
+    if (!itable.table) {
+        printk("initialization of incore table failed\n");
+        return;
+    }
+
+    iRet = create_root();
+    if (iRet == -1) {
+        printk("creation of root failed\n");
+        return;
+    }
+
+
     /* never release super block */
     /* brelse(bh); */
 }
+
+int sys_open(const char *pathname, int flags, int mode)
+{
+
+}
+
+
