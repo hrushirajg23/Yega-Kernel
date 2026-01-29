@@ -233,10 +233,7 @@ void init_dinode(struct d_inode *dinode, int dev_no, unsigned long i_no, uint32_
 void init_inode(struct inode *inode, int dev_no, unsigned long i_no, uint32_t blkno)
 {
     init_dinode((struct d_inode*)inode, dev_no, i_no, blkno);
-    INIT_LIST_NULL(&inode->i_hash);
-    INIT_LIST_NULL(&inode->i_free);
     inode->i_state = 0;
-    inode->i_count = 0;
 }
 
 /*
@@ -642,11 +639,12 @@ struct inode *iget(unsigned short dev_no, unsigned int inum)
             inode->i_count++;
             return locked_inode(inode);
         }
-
         if (list_is_empty(&i_cache.i_free)) {
             printk("inode free list is empty\n");
             return NULL;
         }
+
+        inode = list_first_entry(&i_cache.i_free, struct inode, i_free);
 
         printk(" 1\n");
         list_del(&inode->i_free);
@@ -934,7 +932,7 @@ int create_root(void)
     inode->i_blocks[0] = bh->b_blocknr;
 
     char *root_names[] = {".", "..", "dev", "etc", "usr", "mnt", "bin", "boot", "home"};
-    int iCnt = 0, root_list_size = sizeof(root_names);
+    int iCnt = 0, root_list_size = sizeof(root_names) / sizeof(root_names[0]);
     for (iCnt = 0; iCnt < root_list_size; iCnt++) {
         printk("creating directory : %s\n", root_names[iCnt]);
         if (strcmp(root_names[iCnt], "..") == 0 ||
