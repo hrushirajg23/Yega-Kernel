@@ -30,6 +30,8 @@ kmem_cache_t *file_cache; //for file table entries
 
 LIST_HEAD(file_table);
 
+int create_root(void);
+
 struct inode_cache {
     struct list_head i_hash[DEV_NO];
     struct list_head i_free;
@@ -186,7 +188,6 @@ void fill_free_inode_list(s_ufs *super)
         while (dCnt--) {
             if (dinode->i_mode == 0) {
                 super->s_free_inodes[i_free_cnt++] = dinode->i_no;
-                i_free_cnt++;
                 super->s_next_free_inode++;
             }
             if (i_free_cnt == FREE_INODE_LIST) {
@@ -278,12 +279,12 @@ struct inode *ialloc(short dev_no)
         /* } */ 
 
         /* inode is free */
-        printk("inode is free\n");
+        /* printk("inode is free\n"); */
         uint32_t i_blk = super->s_blk_dilb_start + 
              (i_no / INODES_PER_BLOCK);
         init_inode(inode, dev_no, i_no, i_blk);
         super->s_n_free_inodes--;
-        printk("inode ok\n");
+        /* printk("inode ok\n"); */
 
         return locked_inode(inode);
         
@@ -316,36 +317,64 @@ void make_block_list(unsigned long fs_bytes)
 
     int bCnt = 0;
 
-    unsigned long iblk = start_blk;;
+    unsigned long iblk = start_blk;
     unsigned long iCnt = iblk;
     unsigned long link_blk = 0;
     bCnt = FREE_BLOCK_LIST - 1;
 
     printk("  i_blk = %lu, bCnt = %d\n", iblk, bCnt);
-    for (; bCnt >= 0; bCnt--, iblk++ ){
+    /* Fill the initial superblock free block array */
+    for (; bCnt >= 0 && iblk <= end_blk; bCnt--, iblk++ ){
        super->s_free_blocks[bCnt] = iblk;
+    }
+    printk("s_free_blocks[%d] = %lu\n", FREE_BLOCK_LIST-1, super->s_free_blocks[FREE_BLOCK_LIST-1]);
+    printk("  i_blk = %lu, bCnt = %d\n", iblk, bCnt);
+
+    /* If we've exhausted all blocks, we're done */
+    if (iblk > end_blk) {
+        printk("All blocks fit in superblock array\n");
+        return;
     }
 
     link_blk = super->s_free_blocks[0];
+    printk("first link block is %lu\n", link_blk);
     struct buffer_head *bh;
 
-    for (; iblk <= end_blk; iblk+= FREE_BLOCK_LIST) {
+    while (iblk <= end_blk) {
 
         bh = bread(DEV_NO, link_blk);
         if (!bh) {
             printk("failed bread blkno %lu\n", link_blk);
             return;
         }
+        printk("[ link_blk = %lu, iblk = %lu ]\n", link_blk, iblk);
         
+        // Zero out the buffer to avoid garbage 
+        memset(bh->b_data, 0, U_BLK_SIZE);
+
         bCnt = FREE_BLOCK_LIST - 1;
         iCnt = iblk;
 
+        /* Fill this link block with free block numbers.
+         * Index 0 will contain the pointer to the next link block.
+         * Indices 1-127contain actual free block numbers.
+         */
         for (; iCnt <= end_blk && bCnt >= 0; bCnt--, iCnt++){
             ((unsigned long*)bh->b_data)[bCnt] = iCnt;         
         }
+        
+       
         link_blk = ((unsigned long*)bh->b_data)[0];
 
         bwrite(bh);
+        
+        /* Move to the next batch of blocks */
+        iblk = iCnt;
+        
+        /* If the next link block is 0, we're done */
+        if (link_blk == 0) {
+            break;
+        }
     }
 }
 
@@ -387,8 +416,14 @@ void make_super(int mb)
 
     /*  block area */
     /* remember that data blocks start from next block of s_blk_dilb_end (end of dilb) */
+    
+    unsigned long start_blk = super->s_blk_dilb_end + 1;
+    unsigned long end_blk = (fs_bytes / (unsigned long)U_BLK_SIZE) - 1;
+    super->s_n_free_blocks = end_blk - start_blk + 1; //Initialize free blocks count
 
+    printk("Before make_block_list: s_next_free_block = %d\n", super->s_next_free_block);
     make_block_list(fs_bytes);
+    printk("After make_block_list: s_next_free_block = %d\n", super->s_next_free_block);
 }
 
 void mkufs(int mb)
@@ -426,7 +461,15 @@ void mkufs(int mb)
         bwrite(binode);
     }
 
+    iCnt = create_root();
+    if (iCnt == -1) {
+        printk("creation of root failed\n");
+        return;
+    }
+
+    printk("Before bwrite(superblock): s_next_free_block = %d\n", super->s_next_free_block);
     bwrite(bh);
+    printk("After bwrite(superblock): s_next_free_block = %d\n", super->s_next_free_block);
     
     /* block part */
 
@@ -507,16 +550,13 @@ void display_inode_cache(void)
 }
 static struct inode *search_inode_hash(unsigned short dev_no, unsigned long inum)
 {
-    printk("search inode %lu in hash\n", inum);
     struct inode *inode = NULL;
     struct list_head *run;
     int index = hash_fn((int)inum, dev_no);
 
-    printk(" inode is at index %d\n", index);
     list_for_each(run, &i_cache.i_hash[index]) {
         inode = list_entry(run, struct inode, i_hash);
         if (inode->i_no == inum && inode->i_dev == dev_no) {
-            printk("found inode in hash\n");
             return inode;
         }
     }
@@ -718,7 +758,7 @@ void display_sb(s_ufs *sb)
     printk("Free blocks: %u\n", sb->s_n_free_blocks);
     printk("Next free block: %d\n", sb->s_next_free_block);
 
-    printk("Free inode list        : ");
+    printk("Free block list        : ");
     for (i = 0; i < FREE_BLOCK_LIST; i++) {
         printk("%lu ", sb->s_free_blocks[i]);
     }
@@ -736,12 +776,21 @@ struct buffer_head *balloc(unsigned short dev_no)
         continue;
     }
 
+    if (super->s_next_free_block < 0) {
+        printk("balloc: block list underflow\n");
+        return NULL;
+    }
+
     blk_no = super->s_free_blocks[super->s_next_free_block--];
+
     if (super->s_next_free_block == -1) {
         LOCK(&super->s_block_list_lock);
         bh = bread(DEV_NO, blk_no);
         if (!bh) {
             printk("failed bread for blkno %lu\n", blk_no);
+            // Revert state so we don't stay in -1?
+            // But we lost the link block. FS is effectively stuck/corrupted or read error.
+            // Leaving it at -1 prevents further damage via underflow check above.
             return NULL;
         }
         printk("super free block is empty , now filling data from blkno: %lu\n", blk_no);
@@ -826,13 +875,18 @@ void test_fs(s_ufs *sb)
 
     /* printk("testing data blocks==================\n"); */
 
-    /* const int link_blk = 513; //try with any link block multiple of that starts from super->s_blk_dilb_end + 1 + x*256 */
-    /* for (int iCnt = 0; iCnt < 2; iCnt++) { */
+    /* int iCnt = 0; */
+
+    /* int link_blk = 513; */
+
+    /* for (iCnt = 0; iCnt < 2; iCnt++) { */
 
     /*     btest[iCnt] = bread(DEV_NO, (unsigned long)(link_blk + (iCnt * FREE_BLOCK_LIST))); */
     /*     if (!btest[iCnt]) { */
     /*         printk("bread failed at blkno %lu\n", link_blk  + (iCnt * FREE_BLOCK_LIST)); */
     /*     } */
+
+    /*     printk("readin link block no %lu\n", (unsigned long)(link_blk + (iCnt *FREE_BLOCK_LIST))); */
     /*     unsigned long *ptr = (unsigned long*)btest[iCnt]->b_data; */
     /*     for (int jCnt = 0; jCnt < U_BLK_SIZE / sizeof(unsigned long); jCnt++) { */
     /*         printk("jCnt : %d, block: %lu\n", jCnt, ptr[jCnt]); */
@@ -977,13 +1031,7 @@ void init_fs(void)
         return;
     }
 
-    iRet = create_root();
-    if (iRet == -1) {
-        printk("creation of root failed\n");
-        return;
-    }
-
-
+    /* bwrite(bh); */
     /* never release super block */
     /* brelse(bh); */
 }

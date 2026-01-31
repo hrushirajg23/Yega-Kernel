@@ -40,8 +40,7 @@
 #define SUPER_DIRTY 0 << 1
 #define SUPER_MODIFIED 0 << 2
 
-//array size of free block list in super block
-#define FREE_BLOCK_LIST (U_BLK_SIZE / sizeof(unsigned long)) 
+#define FREE_BLOCK_LIST 128
 
 struct ufs_super_block {
     short s_fs_size;
