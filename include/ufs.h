@@ -19,6 +19,7 @@
 
 #define DIR_ENTRY_BYTES 20
 #define DIR_ENTRY_INODE_SIZE 4
+#define DIR_ENTRY_NAME_SIZE (DIR_ENTRY_BYTES - DIR_ENTRY_INODE_SIZE)
 
 #define FREE_INODE_LIST 50
 
@@ -75,7 +76,7 @@ typedef struct ufs_super_block s_ufs;
 struct d_inode {
     uint16_t i_mode; //file type and access rights
     uint16_t i_uid; //owner identifier
-    uint32_t i_size; //file length in bytes
+    loff_t i_size; //file length in bytes
     uint32_t i_atime; //time of last file access
     uint32_t i_ctime; //time when inode was last changed
     uint32_t i_mtime; //time when file content was changed
@@ -107,7 +108,7 @@ struct inode {
      * do not touch */
     uint16_t i_mode; //file type and access rights
     uint16_t i_uid; //owner identifier
-    uint32_t i_size; //file length in bytes
+    loff_t i_size; //file length in bytes
     uint32_t i_atime; //time of last file access
     uint32_t i_ctime; //time when inode was last changed
     uint32_t i_mtime; //time when file content was changed
@@ -140,6 +141,11 @@ struct file {
     loff_t f_pos; //current file offset
 };
 
+struct dir_entry {
+    unsigned long dir_inode;
+    char dir_name[DIR_ENTRY_NAME_SIZE];
+};
+
 
 #define INCORE_TABLE 50 //incore inode table size
 struct incore_table {
@@ -148,12 +154,12 @@ struct incore_table {
 };
 
 static inline struct inode *locked_inode(struct inode *inode) {
-    SET_FLAG(inode->i_flags, I_lock);
+    SET_FLAG(inode->i_flags, I_LOCKED);
     return inode;
 }
  
 static inline struct inode *unlocked_inode(struct inode *inode) {
-    CLEAR_FLAG(inode->i_flags, I_lock);
+    CLEAR_FLAG(inode->i_flags, I_LOCKED);
     return inode;
 }
 
@@ -162,7 +168,8 @@ struct inode *iget(unsigned short dev_no, unsigned int inum);
 void iput(struct inode *inode);
 void mkufs(int mb);
 void init_fs(void);
-void test_fs(s_ufs *);
+void test_fs();
+int mount_rootfs(void);
 
 
 
