@@ -22,15 +22,16 @@ extern struct task_struct *current;
 uint32_t filesys_start = 0;
 uint8_t fs_start_set = 1;
 struct incore_table itable;
+struct list_head file_table;
 
 s_ufs *super = NULL;
 
 kmem_cache_t *inode_cache;
 kmem_cache_t *file_cache; //for file table entries
 
-LIST_HEAD(file_table);
 
 int create_root(void);
+void display_itable(void);
 
 struct inode_cache {
     struct list_head i_hash[DEV_NO];
@@ -322,13 +323,13 @@ void make_block_list(unsigned long fs_bytes)
     unsigned long link_blk = 0;
     bCnt = FREE_BLOCK_LIST - 1;
 
-    printk("  i_blk = %lu, bCnt = %d\n", iblk, bCnt);
+    /* printk("  i_blk = %lu, bCnt = %d\n", iblk, bCnt); */
     /* Fill the initial superblock free block array */
     for (; bCnt >= 0 && iblk <= end_blk; bCnt--, iblk++ ){
        super->s_free_blocks[bCnt] = iblk;
     }
-    printk("s_free_blocks[%d] = %lu\n", FREE_BLOCK_LIST-1, super->s_free_blocks[FREE_BLOCK_LIST-1]);
-    printk("  i_blk = %lu, bCnt = %d\n", iblk, bCnt);
+    /* printk("s_free_blocks[%d] = %lu\n", FREE_BLOCK_LIST-1, super->s_free_blocks[FREE_BLOCK_LIST-1]); */
+    /* printk("  i_blk = %lu, bCnt = %d\n", iblk, bCnt); */
 
     /* If we've exhausted all blocks, we're done */
     if (iblk > end_blk) {
@@ -337,7 +338,7 @@ void make_block_list(unsigned long fs_bytes)
     }
 
     link_blk = super->s_free_blocks[0];
-    printk("first link block is %lu\n", link_blk);
+    /* printk("first link block is %lu\n", link_blk); */
     struct buffer_head *bh;
 
     while (iblk <= end_blk) {
@@ -347,7 +348,7 @@ void make_block_list(unsigned long fs_bytes)
             printk("failed bread blkno %lu\n", link_blk);
             return;
         }
-        printk("[ link_blk = %lu, iblk = %lu ]\n", link_blk, iblk);
+        /* printk("[ link_blk = %lu, iblk = %lu ]\n", link_blk, iblk); */
         
         // Zero out the buffer to avoid garbage 
         memset(bh->b_data, 0, U_BLK_SIZE);
@@ -405,18 +406,22 @@ void make_super(int mb)
 
     super->s_n_free_inodes = super->s_total_inodes;
     super->s_next_free_inode = FREE_INODE_LIST - 1;
-    /* Initialize free block index */
-    super->s_next_free_block = FREE_BLOCK_LIST - 1;
+    /* Initialize free block index
+     * skip inode 0 and 1(they're not free inodes), hence its iCnt + 2
+     * inode 0 is dummy inode
+     * 
+     */
     for (iCnt = 0; iCnt < FREE_INODE_LIST; iCnt++) {
-        super->s_free_inodes[iCnt] = iCnt;
+        super->s_free_inodes[iCnt] = iCnt + 2;
     }
-    super->s_remembered_inode = iCnt;
+    super->s_remembered_inode = iCnt + 2;
     super->s_inode_list_lock = 0;
     super->s_flags = 0;
 
     /*  block area */
     /* remember that data blocks start from next block of s_blk_dilb_end (end of dilb) */
     
+    super->s_next_free_block = FREE_BLOCK_LIST - 1;
     unsigned long start_blk = super->s_blk_dilb_end + 1;
     unsigned long end_blk = (fs_bytes / (unsigned long)U_BLK_SIZE) - 1;
     super->s_n_free_blocks = end_blk - start_blk + 1; //Initialize free blocks count
@@ -437,6 +442,7 @@ void mkufs(int mb)
     }
     super = (s_ufs*)bh->b_data;
     printk("making super\n");
+    /* block part is made in make_super */
     make_super(mb);
 
     /* inode part */
@@ -467,11 +473,8 @@ void mkufs(int mb)
         return;
     }
 
-    printk("Before bwrite(superblock): s_next_free_block = %d\n", super->s_next_free_block);
     bwrite(bh);
-    printk("After bwrite(superblock): s_next_free_block = %d\n", super->s_next_free_block);
     
-    /* block part */
 
 }
 
@@ -567,21 +570,13 @@ static struct inode *search_inode_hash(unsigned short dev_no, unsigned long inum
 
 void inode_init(struct inode *inode, unsigned short dev_no, unsigned long inum)
 {
+
+    inode->i_no = inum;
+    read_inode(inode);
     INIT_LIST_NULL(&inode->i_hash);
     INIT_LIST_NULL(&inode->i_free);
-    inode->i_no = inum;
-    inode->i_dev = dev_no;
+    inode->i_state = 0;
     inode->i_count = 0;
-    inode->i_mode = 0;
-    inode->i_nlinks = 0;
-    inode->i_uid = 0;
-    inode->i_gid = 0;
-    inode->i_flags = 0;
-    inode->i_size = 0;
-    inode->i_atime = 0;
-    inode->i_mtime = 0;
-    inode->i_ctime = 0;
-    inode->i_n_blocks = 0;
 }
 
 void test_icache(void)
@@ -664,7 +659,7 @@ struct inode *iget(unsigned short dev_no, unsigned int inum)
     while (1) {
         inode = search_inode_hash(dev_no, inum); 
         if (inode) {
-            if (IS_FLAG(inode->i_flags, I_lock)) {
+            if (IS_FLAG(inode->i_flags, I_LOCKED)) {
                 /*
                  * sleep (event this inode becomes free )
                  */
@@ -686,20 +681,16 @@ struct inode *iget(unsigned short dev_no, unsigned int inum)
 
         inode = list_first_entry(&i_cache.i_free, struct inode, i_free);
 
-        printk(" 1\n");
         list_del(&inode->i_free);
         inode->i_no = inum;
-        printk(" 2\n");
         /* ino->dev_no = dev_no; */
         list_del(&inode->i_hash);
         list_add(&i_cache.i_hash[hash_fn(inode->i_no, dev_no)], &inode->i_hash); 
 
-        printk(" 3\n");
         //read inode from disk via bread at core 
         /* ext2_read_inode(inode); */ 
         read_inode(inode);
 
-        printk(" 4\n");
         inode->i_count++; 
 
         return locked_inode(inode);
@@ -718,7 +709,8 @@ void iput(struct inode *inode)
         /*     //set file type to 0 */
         /*     //free inode (ifree) */
         /* } */
-        if (IS_FLAG(inode->i_state, I_DIRTY)) {
+        if (IS_FLAG(inode->i_state, I_DIRTY_INODE) || IS_FLAG(inode->i_state, I_DIRTY_INODE)) {
+            printk("inode %u is dirty, writing inode to disk\n", inode->i_no);
            write_inode(inode); //update the disk inode 
         }
     }
@@ -851,14 +843,22 @@ void bfree(unsigned long blk_no)
 
 
 
-void test_fs(s_ufs *sb)
+void test_fs(void)
 {
     /* Update global super pointer to point to valid buffer data */
-    super = sb; 
 
-    struct buffer_head *btest[2];
-    display_sb(sb);
+    if (!super) {
+        struct buffer_head *bh;
+        bh = bread(DEV_NO, 1);
+        if (!bh) {
+            printk("failed bread for block 1\n");
+            return;
+        }
+        super = (s_ufs*)bh->b_data;
+    }
+    display_sb(super);
 
+    /* struct buffer_head *btest[2]; */
     /* printk("tesint dilb==========================\n"); */
     /* for (int iCnt = 0; iCnt < 2; iCnt++) { */
     /*     btest[iCnt] = bread(DEV_NO, (unsigned long)(sb->s_blk_dilb_start + iCnt)); */
@@ -930,6 +930,42 @@ void test_fs(s_ufs *sb)
     /*     bfree((unsigned long)iCnt); */
     /* } */
    
+    display_itable();
+}
+
+int alloc_incore_entry(struct inode *inode)
+{
+    int iCnt = 0;
+    for (iCnt = 0; iCnt < INCORE_TABLE; iCnt++) {
+        if (itable.table[iCnt] == NULL) {
+            itable.table[iCnt] = inode;
+            return iCnt;
+        }
+    }
+    return -1;
+ 
+}
+
+/*
+ * allocates file table and ufdt entry as well
+ * @paramter: incore inode table entry's index
+ */
+int alloc_file_entry(int incore_entry)
+{
+    int fd;
+    struct file *file = kmem_cache_alloc(file_cache, 0);
+    if (!file) {
+        printk("file object allocation failed\n");
+        return -1;
+    }
+    
+    fd = current->first_free_filp;
+    current->filp[current->first_free_filp++] = file; //allocated ufdt entry 
+    file->f_inode = itable.table[incore_entry]; //allocate file table entry
+    list_add_tail(&file_table, &file->f_list);
+
+    return fd;
+
 }
 
 int allocate_file(struct inode *inode)
@@ -946,6 +982,7 @@ int allocate_file(struct inode *inode)
             itable.table[iCnt] = inode;
         }
     }
+    
     struct file *file = kmem_cache_alloc(file_cache, 0);
     if (!file) {
         printk("file object allocation failed\n");
@@ -963,21 +1000,90 @@ int allocate_file(struct inode *inode)
 void create_entry(const char *entry_name, struct buffer_head *bh,
         unsigned long offset, unsigned long inode_no)
 {
-    char *ptr = (char*)bh->b_data;
-    *(unsigned long*)(ptr + offset) = inode_no;
-    strcpy(ptr + offset + DIR_ENTRY_INODE_SIZE, entry_name);
+    struct dir_entry dentry;
+    dentry.dir_inode = inode_no;
+    strcpy(dentry.dir_name, entry_name);
+
+    /* char *ptr = (char*)bh->b_data; */
+    /* *(unsigned long*)(ptr + offset) = inode_no; */
+    /* strcpy(ptr + offset + DIR_ENTRY_INODE_SIZE, entry_name); */
+
+    memcpy(bh->b_data + offset, &dentry, sizeof(struct dir_entry));
 }
 
-int create_root(void)
+void display_itable(void)
 {
-    printk("Creating ROOT directory\n");
-    struct inode *inode = iget(DEV_NO, 1);
+    printk("displaying incore inode table..........\n");
+
+    /* struct inode *inode = itable.table[0]; */
+    /* int iCnt = 0; */
+    /* while (inode != NULL) { */
+    /*     printk("index %d, inode->i_no: %u\n", iCnt, inode->i_no); */
+    /*     inode++; */
+    /*     iCnt++; */
+    /* } */
+
+}
+
+int mount_rootfs(void)
+{
+    printk("mounting rootfs............\n");
+
+    loff_t iCnt = 0;
+    struct buffer_head *bh = NULL;
+    struct dir_entry *dentry = NULL;
+    struct inode *inode = NULL;
+
+    inode = iget(DEV_NO, 1);
     if (!inode) {
         printk("failed to get inode 1\n");
         return -1;
     }
     read_inode(inode);
+
+    loff_t file_size = inode->i_size;
+    bh = bread(DEV_NO, inode->i_blocks[0]);
+    if (!bh) {
+        printk("failed to get buffer\n");
+        return -1;
+    }
+    alloc_incore_entry(inode);
+    current->root = current->pwd = inode;
+
+    printk("root's file size is %lu\n", file_size);
+
+    /* just print the root directory */
+    dentry = (struct dir_entry*)bh->b_data;
+    for (iCnt = 0; iCnt < file_size; iCnt += DIR_ENTRY_BYTES, dentry++) {
+        printk("entry no %d, i_no: %u, entry_name: %s\n", 
+                (int)(iCnt / DIR_ENTRY_BYTES), dentry->dir_inode,
+                dentry->dir_name);
+    }
+    iput(inode);
+    brelse(bh);
+
+}
+
+int create_root(void)
+{
+    printk("Creating ROOT directory\n");
+    loff_t file_size = 0;
+
     struct buffer_head *bh;
+    struct inode rinode;
+    struct inode *inode;
+    /* inode = iget(DEV_NO, 1); */
+    /* if (!inode) { */
+    /*     printk("failed to get inode 1\n"); */
+    /*     return -1; */
+    /* } */
+
+    
+    
+    rinode.i_no = 1;
+    read_inode(&rinode);
+    inode = &rinode;
+
     bh = balloc(DEV_NO);
     if (!bh) {
         printk("failed to allocate a disk block\n");
@@ -987,26 +1093,27 @@ int create_root(void)
 
     char *root_names[] = {".", "..", "dev", "etc", "usr", "mnt", "bin", "boot", "home"};
     int iCnt = 0, root_list_size = sizeof(root_names) / sizeof(root_names[0]);
-    for (iCnt = 0; iCnt < root_list_size; iCnt++) {
+    for (iCnt = 0; iCnt < 2; iCnt++) {
         printk("creating directory : %s\n", root_names[iCnt]);
         if (strcmp(root_names[iCnt], "..") == 0 ||
                 strcmp(root_names[iCnt], ".") == 0) {
             create_entry(root_names[iCnt], bh, iCnt * DIR_ENTRY_BYTES, (unsigned long)1);
-            if (strcmp(root_names[iCnt], ".") == 0) {
-                allocate_file(inode);
-            }
         }
-        else {
-            struct inode *ientry = ialloc(DEV_NO);
-            if (!ientry) {
-                printk("ialloc failed in creating root directory\n");
-                return -1;
-            }
-            create_entry(root_names[iCnt], bh, iCnt * DIR_ENTRY_BYTES, ientry->i_no);
-            allocate_file(ientry);
-            iput(ientry);
-        }
+        /* else { */
+        /*     struct inode *ientry = ialloc(DEV_NO); */
+        /*     if (!ientry) { */
+        /*         printk("ialloc failed in creating root directory\n"); */
+        /*         return -1; */
+        /*     } */
+        /*     create_entry(root_names[iCnt], bh, iCnt * DIR_ENTRY_BYTES, ientry->i_no); */
+        /*     iput(ientry); */
+        /* } */
+        file_size += DIR_ENTRY_BYTES;
     }
+    inode->i_size = file_size;
+    SET_FLAG(inode->i_state, I_DIRTY_INODE | I_DIRTY_DATA);
+    write_inode(inode);
+    /* iput(inode); */
     bwrite(bh);
     return 0;
 }
@@ -1014,22 +1121,29 @@ int create_root(void)
 
 void init_fs(void)
 {
-    int iRet = 0;
-    s_ufs *sb;
-    struct buffer_head *bh;
-    bh = bread(DEV_NO, 1);
-    if (!bh) {
-        printk("failed bread for block 1\n");
-        return;
+    int iCnt = 0;
+    if (!super) {
+        struct buffer_head *bh;
+        bh = bread(DEV_NO, 1);
+        if (!bh) {
+            printk("read super blocked failed \n");
+            return;
+        }
+        super = (s_ufs*)bh->b_data;
     }
-    sb = (s_ufs*)bh->b_data;
-    test_fs(sb);
 
     itable.table = (struct inode**)kzalloc(INCORE_TABLE, 0);
     if (!itable.table) {
         printk("initialization of incore table failed\n");
         return;
     }
+    for (iCnt = 0; iCnt < INCORE_TABLE; iCnt++) {
+        itable.table[iCnt] = NULL;
+    }
+
+    /*initiliaze file table */
+    INIT_LIST_HEAD(&file_table);
+
 
     /* bwrite(bh); */
     /* never release super block */
@@ -1039,6 +1153,16 @@ void init_fs(void)
 int sys_open(const char *pathname, int flags, int mode)
 {
 
+    int fd;
+    struct inode *inode;
+    inode = namei(pathname);
+    if (!inode) {
+        printk("no such existing file %s\n", pathname);
+        return -1;
+    }
+    fd = allocate_file(inode);
+    inode = unlocked_inode(inode);
+    return fd;
 }
 
 

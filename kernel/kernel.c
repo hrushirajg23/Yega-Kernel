@@ -120,15 +120,25 @@ void kernel_main(uint32_t magic, uint32_t addr) {
     printk("initializing buffer cache\n");
     create_buffer_cache();
 
-    printk("cooking fs\n");
+    /*
+     * CAUTION: the erases the whole existing file system
+     * remember , for once, you use mkufs, comment it out ,
+     * next time to use the os freely and apply your changes
+     */
+    printk("cooking ritchie's unix file system............................\n");
     mkufs(8);
+
+    printk("initialising unix file system...........................\n");
+    init_fs();
 
     printk("initializing inode cache \n");
     create_inode_cache();
+        
+    printk("mounting rootfs.........\n");
+    mount_rootfs();
 
-    /* printk("testing fs\n"); */
-    /* test_fs(); */
-
+    printk("testing fs\n");
+    test_fs();
 
     terminal_initialize();
     terminal_writestring("Hello, Welcome To Yega Kernel!\n");
