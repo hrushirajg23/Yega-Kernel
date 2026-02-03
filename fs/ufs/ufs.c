@@ -29,7 +29,9 @@ s_ufs *super = NULL;
 kmem_cache_t *inode_cache;
 kmem_cache_t *file_cache; //for file table entries
 
-
+int sys_read(int fd, void *usr_buf, size_t len);
+int sys_write(int fd, void *usr_buf, size_t len); 
+int sys_open(const char *pathname, int flags, int mode);
 int create_root(void);
 void display_itable(void);
 
@@ -61,9 +63,9 @@ int disk_write_blk(uint32_t block_num, uint8_t *buf) {
     return 0;
 }
 
-int bmap(struct inode *inode, unsigned long byte_offset)
+int bmap(loff_t byte_offset)
 {
-    return byte_offset / U_BLK_SIZE;
+    return (int)(byte_offset / (loff_t)U_BLK_SIZE);
 }
 
 /*
@@ -72,42 +74,44 @@ int bmap(struct inode *inode, unsigned long byte_offset)
  */
 uint32_t search_dir(struct inode *inode, const char *entry, int entry_len) 
 {
-    unsigned long offset = 0;
-    unsigned long len = inode->i_size;
+    printk("searching dir for entry: %s\n", entry);
     int block = (inode->i_size / U_BLK_SIZE ) + 1;
     int iCnt = 0;
     struct buffer_head *bh = NULL;
-    uint32_t inum;
+    struct dir_entry *dentry = NULL;
+    bool bFlag = false;
 
     while (iCnt < block) {
         bh = bread(DEV_NO, inode->i_blocks[iCnt]);    
         if (!bh) {
             printk("failed bread in search_dir\n");
         }
-        offset += DIR_ENTRY_INODE_SIZE;
-        while (offset < U_BLK_SIZE) {
-           if (strncmp(bh->b_data + offset, entry, entry_len) == 0) {
-               inum = *(uint32_t *)(bh->b_data + offset - DIR_ENTRY_INODE_SIZE); 
-               goto conclude;
-           } 
-           offset += DIR_ENTRY_BYTES;
+        dentry = (struct dir_entry*)bh->b_data;
+        int max_dir_ent = U_BLK_SIZE / sizeof(struct dir_entry);
+        while (max_dir_ent--) {
+            if (strncmp(dentry->dir_name, entry, entry_len) == 0) {
+                bFlag = true;
+                goto conclude;
+            } 
+            dentry++;
         }
         brelse(bh);
         iCnt++;
     }
-    return -1;
 
 conclude:
-    brelse(bh);
-    return inum;
+    if (bFlag) {
+        brelse(bh);
+    }
+    return dentry ? dentry->dir_inode : -1;
 }
 
 /*
      @brief: returns index of the component where string end or next char=/ 
 */
-static inline int next_token(const char* str,int start,int len){
-     int end=start;
-     while(end < len && str[end]!= '/'  ){    
+static inline int next_token(const char* str, int start, int len){
+     int end = start;
+     while(end < len && str[end] != '\0' && str[end]!= '/'  ){    
           end++;
      }
      return end-1;
@@ -125,38 +129,39 @@ struct inode *namei(const char *path)
     }
 
     if (path[0] == '/') {
-        /* work = iget(DEV_NO, 1); //get the root directory */
         work = current->root;
         index++;
     }
     else {
         work = current->pwd;
     }
+    printk("working inode is %u\n", work->i_no);
 
     while (index < len) {
         char *curr_token = NULL;
         int end;
-        if (look[index] == '/') {
-            end = next_token(path, index, len);
-            curr_token = (char*)kmalloc(sizeof(char)*(end-index+1), 0);
-            if (!curr_token) {
-                printk("failed kmalloc for curr_token\n");
-            }
-            strncpy(curr_token, look+index, end-index+1);
-            inode = search_dir(work, curr_token, end-index+1);
-            if (inode == -1) {
-                printk("inode not found in directory \n");
-                kfree(curr_token);
-                return NULL;
-            }
-            
+        end = next_token(path, index, len);
+        curr_token = (char*)kmalloc(sizeof(char)*(end-index+1), 0);
+        if (!curr_token) {
+            printk("failed kmalloc for curr_token\n");
+        }
+        strncpy(curr_token, look+index, end-index+1);
+        printk("current token is %s, [index: %d, end: %d] \n", curr_token, index, end);
+        inode = search_dir(work, curr_token, end-index+1);
+        if (inode == -1) {
+            printk("inode not found in directory \n");
+            kfree(curr_token);
+            return NULL;
         }
         kfree(curr_token);
         iput(work);
         work = iget(DEV_NO, inode);
-        index = end + 1;
+        if (!work) {
+            printk("failed to get working inode %u\n", inode);
+            return NULL;
+        }
+        index = end + 2;
     }
-
     return work;
 }
 
@@ -659,7 +664,7 @@ struct inode *iget(unsigned short dev_no, unsigned int inum)
     while (1) {
         inode = search_inode_hash(dev_no, inum); 
         if (inode) {
-            if (IS_FLAG(inode->i_flags, I_LOCKED)) {
+            if (IS_FLAG(inode->i_state, I_LOCKED)) {
                 /*
                  * sleep (event this inode becomes free )
                  */
@@ -715,7 +720,6 @@ void iput(struct inode *inode)
         }
     }
     list_add_tail(&i_cache.i_free, &inode->i_free);
-
     unlocked_inode(inode);
 }
 
@@ -857,6 +861,55 @@ void test_fs(void)
         super = (s_ufs*)bh->b_data;
     }
     display_sb(super);
+    display_itable();
+    /* struct inode *inode; */
+    /* inode = namei("/home"); */
+    /* if (!inode) { */
+    /*     printk("namei failed\n"); */
+    /*     return; */
+    /* } */
+    /* printk("inode no is %u\n", inode->i_no); */
+    /* iput(inode); */
+
+    int fd = sys_open("/home", 0, 0);
+    if (fd == -1) {
+        printk("sys_open failed \n");
+        return;
+    }
+    printk("fd is %d\n", fd);
+
+    int iCnt = 0, buf_size = 1200;
+    char arr[buf_size];
+    char brr[buf_size];
+
+    for (iCnt = 0; iCnt < buf_size; iCnt++) {
+        arr[iCnt] = 'a' + ( iCnt % 26 );
+    }
+
+    /* int wrote = sys_write(fd, arr, buf_size); */
+    /* if (wrote == -1) { */
+    /*     printk("write file failed\n"); */
+    /*     return; */
+    /* } */
+    /* printk("wrote %d bytes\n", wrote); */
+
+    int read_b = sys_read(fd, brr, buf_size);
+    if (read_b == -1) {
+        printk("read file failed\n");
+        return;
+    }
+
+    printk("read_b %d bytes: \n%s\n", read_b, brr);
+    
+
+
+    /* fd = sys_open("/bin", 0, 0); */
+    /* if (fd == -1) { */
+    /*     printk("sys_open failed \n"); */
+    /*     return; */
+    /* } */
+    /* printk("fd is %d\n", fd); */
+
 
     /* struct buffer_head *btest[2]; */
     /* printk("tesint dilb==========================\n"); */
@@ -930,7 +983,6 @@ void test_fs(void)
     /*     bfree((unsigned long)iCnt); */
     /* } */
    
-    display_itable();
 }
 
 int alloc_incore_entry(struct inode *inode)
@@ -1004,10 +1056,6 @@ void create_entry(const char *entry_name, struct buffer_head *bh,
     dentry.dir_inode = inode_no;
     strcpy(dentry.dir_name, entry_name);
 
-    /* char *ptr = (char*)bh->b_data; */
-    /* *(unsigned long*)(ptr + offset) = inode_no; */
-    /* strcpy(ptr + offset + DIR_ENTRY_INODE_SIZE, entry_name); */
-
     memcpy(bh->b_data + offset, &dentry, sizeof(struct dir_entry));
 }
 
@@ -1054,7 +1102,7 @@ int mount_rootfs(void)
 
     /* just print the root directory */
     dentry = (struct dir_entry*)bh->b_data;
-    for (iCnt = 0; iCnt < file_size; iCnt += DIR_ENTRY_BYTES, dentry++) {
+    for (iCnt = 0; iCnt < file_size; iCnt += sizeof(struct dir_entry), dentry++) {
         printk("entry no %d, i_no: %u, entry_name: %s\n", 
                 (int)(iCnt / DIR_ENTRY_BYTES), dentry->dir_inode,
                 dentry->dir_name);
@@ -1072,14 +1120,7 @@ int create_root(void)
     struct buffer_head *bh;
     struct inode rinode;
     struct inode *inode;
-    /* inode = iget(DEV_NO, 1); */
-    /* if (!inode) { */
-    /*     printk("failed to get inode 1\n"); */
-    /*     return -1; */
-    /* } */
-
-    
-    
+        
     rinode.i_no = 1;
     read_inode(&rinode);
     inode = &rinode;
@@ -1093,28 +1134,24 @@ int create_root(void)
 
     char *root_names[] = {".", "..", "dev", "etc", "usr", "mnt", "bin", "boot", "home"};
     int iCnt = 0, root_list_size = sizeof(root_names) / sizeof(root_names[0]);
-    for (iCnt = 0; iCnt < 2; iCnt++) {
+    for (iCnt = 0; iCnt < root_list_size; iCnt++) {
         printk("creating directory : %s\n", root_names[iCnt]);
         if (strcmp(root_names[iCnt], "..") == 0 ||
                 strcmp(root_names[iCnt], ".") == 0) {
             create_entry(root_names[iCnt], bh, iCnt * DIR_ENTRY_BYTES, (unsigned long)1);
         }
-        /* else { */
-        /*     struct inode *ientry = ialloc(DEV_NO); */
-        /*     if (!ientry) { */
-        /*         printk("ialloc failed in creating root directory\n"); */
-        /*         return -1; */
-        /*     } */
-        /*     create_entry(root_names[iCnt], bh, iCnt * DIR_ENTRY_BYTES, ientry->i_no); */
-        /*     iput(ientry); */
-        /* } */
+        else {
+            create_entry(root_names[iCnt], bh, iCnt * DIR_ENTRY_BYTES, 
+                    super->s_free_inodes[super->s_next_free_inode--]);  
+            super->s_n_free_inodes--;
+        }
         file_size += DIR_ENTRY_BYTES;
     }
     inode->i_size = file_size;
     SET_FLAG(inode->i_state, I_DIRTY_INODE | I_DIRTY_DATA);
     write_inode(inode);
-    /* iput(inode); */
     bwrite(bh);
+
     return 0;
 }
 
@@ -1152,7 +1189,6 @@ void init_fs(void)
 
 int sys_open(const char *pathname, int flags, int mode)
 {
-
     int fd;
     struct inode *inode;
     inode = namei(pathname);
@@ -1165,4 +1201,136 @@ int sys_open(const char *pathname, int flags, int mode)
     return fd;
 }
 
+int sys_read(int fd, void *usr_buf, size_t len)
+{
+    int read_b = 0;
+    if (!current->filp[fd]) {
+        printk("wrong fd\n");
+        return -1;
+    }
+    struct file *file = current->filp[fd];
+    loff_t cur = file->f_pos;
+    struct inode *inode = file->f_inode;
+    if (IS_FLAG(inode->i_state, I_LOCKED)) {
+        printk("inode is locked\n");
+        return -1;
+    }
+    locked_inode(inode);
+    printk("file's size is %lu\n", inode->i_size);
+    
+    if ( cur + len > inode->i_size ) {
+        len = inode->i_size - cur;
+    }
 
+    loff_t end = cur + len;
+    char *pu = (char*)usr_buf;
+    loff_t u_off = 0;
+    int blk_end;
+    int inc = 0;
+    while (cur < end) {
+
+        printk("cur: %lu, end: %lu, len: %lu\n", cur, end, len);
+        int i_block = bmap(cur);
+        int blk_off = cur % U_BLK_SIZE;
+        struct buffer_head *bh =  bread(DEV_NO, inode->i_blocks[i_block]);
+        if (!bh) {
+            printk("bread %lu failed\n", inode->i_blocks[i_block]);
+            return -1;
+        }
+        printk("inode's %dth block is %lu\n", i_block, inode->i_blocks[i_block]);
+        int stop = ((i_block + 1) * U_BLK_SIZE);
+        if (cur + (end - cur) >= stop) {
+            blk_end = U_BLK_SIZE;
+            inc = stop - cur;
+            cur += inc;
+        }
+        else {
+            blk_end = end % U_BLK_SIZE;
+            inc = (blk_end - (cur % U_BLK_SIZE));
+            cur += inc;
+        }
+        memcpy((char*)pu + u_off , ((char*)bh->b_data) + blk_off, blk_end - blk_off);
+        u_off += inc;
+        printk("\nbuffer contains: \n%s\n", bh->b_data);
+        brelse(bh);
+    }
+
+    file->f_pos = cur;
+    read_b = u_off;
+    unlocked_inode(inode);
+
+    return read_b;
+}
+
+
+int sys_write(int fd, void *usr_buf, size_t len) 
+{
+    int write_b = 0;
+    if (!current->filp[fd]) {
+        printk("wrong fd\n");
+        return -1;
+    }
+    struct file *file = current->filp[fd];
+    loff_t cur = file->f_pos;
+    printk("current file pos is %lu\n", cur);
+    struct inode *inode = file->f_inode;
+    if (IS_FLAG(inode->i_state, I_LOCKED)) {
+        printk("inode is locked\n");
+        return -1;
+    }
+
+    locked_inode(inode);
+    
+    loff_t end = cur + len;
+    char *pu = (char*)usr_buf;
+    loff_t u_off = 0;
+    int blk_end;
+    int inc = 0;
+    printk("end is %lu\n", end);
+
+    while (cur < end) {
+        int i_block = bmap(cur);
+        int blk_off = cur % U_BLK_SIZE;
+        struct buffer_head *bh;
+        if (blk_off == 0) {
+            bh = balloc(DEV_NO);
+            if (!bh) {
+                printk("balloc failed \n");
+                return -1;
+            }
+            inode->i_blocks[i_block] = bh->b_blocknr;
+            printk("allocated block %lu\n", bh->b_blocknr);
+        }
+        else {
+            bh =  bread(DEV_NO, inode->i_blocks[i_block]);
+            if (!bh) {
+                printk("bread %lu failed\n", inode->i_blocks[i_block]);
+                return -1;
+            }
+        }
+        
+        int stop = ((i_block + 1) * U_BLK_SIZE);
+        if (cur + (end - cur) >= stop) {
+            blk_end = U_BLK_SIZE;
+            inc = stop - cur;
+            cur += inc;
+        }
+        else {
+            blk_end = end % U_BLK_SIZE;
+            inc = (blk_end - (cur % U_BLK_SIZE));
+            cur += inc;
+        }
+        memcpy(((char*)bh->b_data) + blk_off, (char*)pu + u_off, blk_end - blk_off);
+        u_off += inc;
+        /* printk("printing buffer to check: \n%s\n", bh->b_data); */
+        bwrite(bh);
+    }
+
+    file->f_pos = cur;
+    write_b = u_off;
+    inode->i_size += write_b;
+    write_inode(inode);
+
+    unlocked_inode(inode);
+    return write_b;
+}

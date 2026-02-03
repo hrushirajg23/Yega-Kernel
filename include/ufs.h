@@ -17,7 +17,8 @@
 #define U_BLK_SIZE 1024
 #define MAX_DISK_BLOCKS 10
 
-#define DIR_ENTRY_BYTES 20
+//BLOCK size must be completely divisible by DIR_ENTRY_BYTES 
+#define DIR_ENTRY_BYTES 16
 #define DIR_ENTRY_INODE_SIZE 4
 #define DIR_ENTRY_NAME_SIZE (DIR_ENTRY_BYTES - DIR_ENTRY_INODE_SIZE)
 
