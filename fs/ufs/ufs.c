@@ -29,9 +29,11 @@ s_ufs *super = NULL;
 kmem_cache_t *inode_cache;
 kmem_cache_t *file_cache; //for file table entries
 
+int sys_close(int fd);
 int sys_read(int fd, void *usr_buf, size_t len);
 int sys_write(int fd, void *usr_buf, size_t len); 
 int sys_open(const char *pathname, int flags, int mode);
+int mkdir(const char *pathname, int mode);
 int create_root(void);
 void display_itable(void);
 
@@ -117,7 +119,7 @@ static inline int next_token(const char* str, int start, int len){
      return end-1;
 }
 
-struct inode *namei(const char *path)
+struct inode *namei(const char *path, int flags)
 {
     struct inode *work = NULL;
     const char *look = path;
@@ -151,6 +153,9 @@ struct inode *namei(const char *path)
         if (inode == -1) {
             printk("inode not found in directory \n");
             kfree(curr_token);
+            if (IS_FLAG(flags, N_PARENT)) {
+                return work;
+            }
             return NULL;
         }
         kfree(curr_token);
@@ -233,7 +238,7 @@ void init_dinode(struct d_inode *dinode, int dev_no, unsigned long i_no, uint32_
     dinode->i_no = i_no;
     dinode->i_blkno = blkno;
     dinode->i_dir_acl = 0;
-    dinode->i_faddr = 0;
+    dinode->i_pino= 0;
 }
 
 
@@ -582,6 +587,7 @@ void inode_init(struct inode *inode, unsigned short dev_no, unsigned long inum)
     INIT_LIST_NULL(&inode->i_free);
     inode->i_state = 0;
     inode->i_count = 0;
+    inode->i_parent = NULL;
 }
 
 void test_icache(void)
@@ -714,7 +720,7 @@ void iput(struct inode *inode)
         /*     //set file type to 0 */
         /*     //free inode (ifree) */
         /* } */
-        if (IS_FLAG(inode->i_state, I_DIRTY_INODE) || IS_FLAG(inode->i_state, I_DIRTY_INODE)) {
+        if (IS_FLAG(inode->i_state, I_DIRTY_INODE) || IS_FLAG(inode->i_state, I_DIRTY_DATA)) {
             printk("inode %u is dirty, writing inode to disk\n", inode->i_no);
            write_inode(inode); //update the disk inode 
         }
@@ -862,14 +868,6 @@ void test_fs(void)
     }
     display_sb(super);
     display_itable();
-    /* struct inode *inode; */
-    /* inode = namei("/home"); */
-    /* if (!inode) { */
-    /*     printk("namei failed\n"); */
-    /*     return; */
-    /* } */
-    /* printk("inode no is %u\n", inode->i_no); */
-    /* iput(inode); */
 
     int fd = sys_open("/home", 0, 0);
     if (fd == -1) {
@@ -878,13 +876,29 @@ void test_fs(void)
     }
     printk("fd is %d\n", fd);
 
-    int iCnt = 0, buf_size = 1200;
-    char arr[buf_size];
+    int fd2 = sys_open("/bin/", 0, 0);
+    if (fd2 == -1) {
+        printk("failed to mkdir\n");
+        return;
+    }
+    printk("fd2 is %d\n", fd2);
+
+
+
+    int fd3 = mkdir("/bin/yellow", 0);
+    if (fd3 == -1) {
+        printk("failed to mkdir\n");
+        return;
+    }
+    printk("fd3 is %d\n", fd3);
+
+    int iCnt = 0, buf_size = 256;
+    /* char arr[buf_size]; */
     char brr[buf_size];
 
-    for (iCnt = 0; iCnt < buf_size; iCnt++) {
-        arr[iCnt] = 'a' + ( iCnt % 26 );
-    }
+    /* for (iCnt = 0; iCnt < buf_size; iCnt++) { */
+    /*     arr[iCnt] = 'a' + ( iCnt % 26 ); */
+    /* } */
 
     /* int wrote = sys_write(fd, arr, buf_size); */
     /* if (wrote == -1) { */
@@ -893,15 +907,16 @@ void test_fs(void)
     /* } */
     /* printk("wrote %d bytes\n", wrote); */
 
-    int read_b = sys_read(fd, brr, buf_size);
+    int read_b = sys_read(fd2, brr, buf_size);
     if (read_b == -1) {
         printk("read file failed\n");
         return;
     }
-
     printk("read_b %d bytes: \n%s\n", read_b, brr);
     
-
+    sys_close(fd);
+    sys_close(fd2);
+    sys_close(fd3);
 
     /* fd = sys_open("/bin", 0, 0); */
     /* if (fd == -1) { */
@@ -1134,16 +1149,25 @@ int create_root(void)
 
     char *root_names[] = {".", "..", "dev", "etc", "usr", "mnt", "bin", "boot", "home"};
     int iCnt = 0, root_list_size = sizeof(root_names) / sizeof(root_names[0]);
+    uint32_t inos = 0;
     for (iCnt = 0; iCnt < root_list_size; iCnt++) {
         printk("creating directory : %s\n", root_names[iCnt]);
         if (strcmp(root_names[iCnt], "..") == 0 ||
                 strcmp(root_names[iCnt], ".") == 0) {
             create_entry(root_names[iCnt], bh, iCnt * DIR_ENTRY_BYTES, (unsigned long)1);
+            inode->i_pino = 1;
         }
         else {
+            struct inode dinode;
+            inos = super->s_free_inodes[super->s_next_free_inode--];
+            dinode.i_no = inos;
             create_entry(root_names[iCnt], bh, iCnt * DIR_ENTRY_BYTES, 
-                    super->s_free_inodes[super->s_next_free_inode--]);  
+                   inos); 
+
+            read_inode(&dinode);
+            dinode.i_pino = 1;
             super->s_n_free_inodes--;
+            write_inode(&dinode);
         }
         file_size += DIR_ENTRY_BYTES;
     }
@@ -1187,18 +1211,133 @@ void init_fs(void)
     /* brelse(bh); */
 }
 
+ char *my_name(const char *pathname)
+{
+    int len = strlen(pathname);
+    /*
+     * if path ends with '/' like
+     * /usr/bin/
+     */
+    if (pathname[len-1] == '/') {
+        len--;
+    }
+    char *ptr = (pathname + len - 1);
+    while (len !=0 && ptr[len] != '/') {
+        ptr--;
+    }
+    return ptr;
+}
+
 int sys_open(const char *pathname, int flags, int mode)
 {
-    int fd;
-    struct inode *inode;
-    inode = namei(pathname);
-    if (!inode) {
-        printk("no such existing file %s\n", pathname);
+    int fd = -1, curr_blk = 0;
+    struct inode *inode = NULL, *pinode = NULL;
+    struct buffer_head *bh = NULL;
+    char *entry_name = NULL;
+    bool bFlag = true;
+    printk("_sys_open: %s\n", pathname);
+
+    pinode = namei(pathname, N_PARENT);
+    if (!pinode) {
+        printk("no such existing parent dir%s\n", pathname);
         return -1;
     }
+    printk("pinode inode : %u\n", pinode->i_no);
+    if (IS_FLAG(flags, O_CREAT)) {
+        inode = ialloc(DEV_NO);
+        if (!inode) {
+            printk("inode allocation failed\n");
+            bFlag = false;
+            goto relse;
+        }
+        /* pinode = namei(pathname, N_PARENT); */
+        /* if (!pinode) { */
+        /*     printk("no such existing parent dir%s\n", pathname); */
+        /*     return -1; */
+        /* } */
+        curr_blk = pinode->i_size / U_BLK_SIZE;
+        if (pinode->i_size % U_BLK_SIZE == 0) {
+            bh = balloc(DEV_NO);
+            if (!bh) {
+                printk("balloc failed in sys_open\n");
+                bFlag = false;
+                goto relse;
+            }
+            pinode->i_blocks[curr_blk] = bh->b_blocknr;
+        }
+        else {
+            bh = getblk(DEV_NO, pinode->i_blocks[curr_blk]);
+            if (!bh) {
+                printk("getblk failed \n");
+                bFlag = false;
+                goto relse;
+            }
+        }
+        entry_name = my_name(pathname);
+        printk("my name is %s\n", my_name);
+        create_entry(entry_name, bh, (unsigned long)(pinode->i_size % U_BLK_SIZE),
+                inode->i_no);
+
+        if (IS_FLAG(flags, O_DIR)) {
+            struct buffer_head *ibh;
+            ibh = balloc(DEV_NO);
+            if (!ibh) {
+                printk("balloc failed is sys open\n");
+                bFlag = false;
+                goto relse;
+            }
+
+            create_entry(".", ibh, 0, inode->i_no);
+            create_entry("..", ibh, sizeof(struct dir_entry), pinode->i_no);
+            inode->i_size += (2 * sizeof(struct dir_entry));
+            SET_FLAG(inode->i_state, I_DIRTY_INODE | I_DIRTY_DATA);
+            bwrite(ibh);
+        }
+        /* inode->i_parent = pinode; */
+        /* inode->i_pino = pinode->i_no; */
+        pinode->i_size += sizeof(struct dir_entry);
+        SET_FLAG(pinode->i_state, I_DIRTY_INODE | I_DIRTY_DATA);
+relse:
+        iput(pinode);
+        if (bh) {
+            brelse(bh);
+        }
+        if (bFlag == false) {
+            return -1;
+        }
+    }
+    else {
+        /*
+         * here instead of repeating namei for your file as you have access to parent dir
+         * , you could instead change the currrent->pwd to parent and then namei the single
+         * filename with my_name function. and then set back current pwd to original
+         * but not confirm that if process should changes its dir for security reasons
+         * , I think so no, but
+         * this reduces our time complexity
+         */
+        inode->i_parent = pinode;
+        inode = namei(pathname, 0);
+        if (!inode) {
+            printk("no such existing file %s\n", pathname);
+            iput(pinode);
+            return -1;
+        }
+    }
+    
     fd = allocate_file(inode);
     inode = unlocked_inode(inode);
     return fd;
+}
+
+int sys_close(int fd)
+{
+    struct file *file = current->filp[fd];
+    if (!file) {
+        printk("no such existing fd : %d\n", fd);
+        return -1;
+    }
+    iput(file->f_inode);
+    return 0;
 }
 
 int sys_read(int fd, void *usr_buf, size_t len)
@@ -1329,8 +1468,32 @@ int sys_write(int fd, void *usr_buf, size_t len)
     file->f_pos = cur;
     write_b = u_off;
     inode->i_size += write_b;
-    write_inode(inode);
+    /* remember to close files, 
+     * since in write we mark, inode dirty
+     * and sys_close calls iput which write inode to
+     * disk if dirty
+     */
+    /* write_inode(inode); */
+    SET_FLAG(inode->i_state, I_DIRTY_INODE | I_DIRTY_DATA);
 
     unlocked_inode(inode);
     return write_b;
+}
+
+int mkdir(const char *pathname, int mode)
+{
+
+    int fd;
+    /* struct inode *parent = namei(pathname, N_PARENT); */
+    /* if (!parent) { */
+    /*     printk("failed namei for path: %s\n", parent); */
+    /*     return -1; */
+    /* } */
+    fd = sys_open(pathname, O_CREAT | O_DIR, 0);
+    if (fd == -1) {
+       printk("failed to open %s\n", pathname);
+       return -1;
+    }
+
+   return fd; 
 }

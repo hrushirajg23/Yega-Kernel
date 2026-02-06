@@ -33,9 +33,6 @@
 
 #define DEV_NO 4
 
-#define I_DIRTY 1 << 1
-#define I_lock 1 << 0
-
 #define INODE_MEMBER_BLOCKS 15
 #define NR_OPEN 30
 
@@ -91,7 +88,7 @@ struct d_inode {
     uint32_t i_no;  
     uint32_t i_blkno;    //the disk block in which this inode is stored
     uint32_t i_dir_acl;     //directory access control list
-    uint32_t i_faddr;       //fragment address
+    uint32_t i_pino;       //parent inode number
     uint8_t i_osd2[12];     //os specific info
 };
 
@@ -119,11 +116,11 @@ struct inode {
     uint32_t i_n_blocks; //number of data blocks of file
     uint32_t i_flags;   //file flags
     uint32_t i_dev;        // os specific info
-    uint32_t i_blocks[15];   //pointer to data blocks, 13 member array of bach
+    uint32_t i_blocks[INODE_MEMBER_BLOCKS];   //pointer to data blocks, 13 member array of bach
     uint32_t i_no; //inode number  
     uint32_t i_file_acl;    //file access control list
     uint32_t i_dir_acl;     //directory access control list
-    uint32_t i_faddr;       //fragment address
+    uint32_t i_pino;       //parent inode number
     uint8_t i_osd2[12];     //os specific info
 
     /* in-core inode starts */
@@ -131,6 +128,19 @@ struct inode {
     struct list_head i_free;
     uint16_t i_state; //one of the contents from inode_state enum
     uint32_t i_count; //reference count
+    struct inode *i_parent;
+};
+
+enum open_flags {
+   O_CREAT = 0 << 1,
+   O_RDONLY = 0 << 2,
+   O_WRONLY = 0 << 3,
+   O_TRUNC = 0 << 4,
+   O_DIR = 0 << 5,
+};
+
+enum namei_modes {
+    N_PARENT = 0 << 1,
 };
 
 struct file {
