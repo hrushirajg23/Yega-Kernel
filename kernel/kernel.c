@@ -126,7 +126,7 @@ void kernel_main(uint32_t magic, uint32_t addr) {
      * next time to use the os freely and apply your changes
      */
     printk("cooking ritchie's unix file system............................\n");
-    mkufs(8);
+    /* mkufs(8); */
 
     printk("initialising unix file system...........................\n");
     init_fs();
@@ -139,6 +139,9 @@ void kernel_main(uint32_t magic, uint32_t addr) {
 
     printk("testing fs\n");
     test_fs();
+
+    printk("syncing fs\n");
+    sync();
 
     terminal_initialize();
     terminal_writestring("Hello, Welcome To Yega Kernel!\n");

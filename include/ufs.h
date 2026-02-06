@@ -18,7 +18,7 @@
 #define MAX_DISK_BLOCKS 10
 
 //BLOCK size must be completely divisible by DIR_ENTRY_BYTES 
-#define DIR_ENTRY_BYTES 16
+#define DIR_ENTRY_BYTES 32
 #define DIR_ENTRY_INODE_SIZE 4
 #define DIR_ENTRY_NAME_SIZE (DIR_ENTRY_BYTES - DIR_ENTRY_INODE_SIZE)
 
@@ -132,15 +132,15 @@ struct inode {
 };
 
 enum open_flags {
-   O_CREAT = 0 << 1,
-   O_RDONLY = 0 << 2,
-   O_WRONLY = 0 << 3,
-   O_TRUNC = 0 << 4,
-   O_DIR = 0 << 5,
+   O_CREAT = 1 << 1,
+   O_RDONLY = 1 << 2,
+   O_WRONLY = 1 << 3,
+   O_TRUNC = 1 << 4,
+   O_DIR = 1 << 5,
 };
 
 enum namei_modes {
-    N_PARENT = 0 << 1,
+    N_PARENT = 1 << 1,
 };
 
 struct file {
@@ -181,6 +181,7 @@ void mkufs(int mb);
 void init_fs(void);
 void test_fs();
 int mount_rootfs(void);
+int sync();
 
 
 

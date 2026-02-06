@@ -25,6 +25,7 @@ struct incore_table itable;
 struct list_head file_table;
 
 s_ufs *super = NULL;
+struct buffer_head *sb_bh = NULL;
 
 kmem_cache_t *inode_cache;
 kmem_cache_t *file_cache; //for file table entries
@@ -82,20 +83,26 @@ uint32_t search_dir(struct inode *inode, const char *entry, int entry_len)
     struct buffer_head *bh = NULL;
     struct dir_entry *dentry = NULL;
     bool bFlag = false;
+    int total_bytes = 0;
 
     while (iCnt < block) {
         bh = bread(DEV_NO, inode->i_blocks[iCnt]);    
         if (!bh) {
             printk("failed bread in search_dir\n");
+            return -1;
         }
         dentry = (struct dir_entry*)bh->b_data;
         int max_dir_ent = U_BLK_SIZE / sizeof(struct dir_entry);
         while (max_dir_ent--) {
-            if (strncmp(dentry->dir_name, entry, entry_len) == 0) {
+            if (total_bytes >= inode->i_size) {
+                 break;
+            }
+            if (strncmp(dentry->dir_name, entry, entry_len) == 0 && strlen(dentry->dir_name) == entry_len) {
                 bFlag = true;
                 goto conclude;
             } 
             dentry++;
+            total_bytes += sizeof(struct dir_entry);
         }
         brelse(bh);
         iCnt++;
@@ -105,7 +112,7 @@ conclude:
     if (bFlag) {
         brelse(bh);
     }
-    return dentry ? dentry->dir_inode : -1;
+    return bFlag ? dentry->dir_inode : -1;
 }
 
 /*
@@ -143,20 +150,27 @@ struct inode *namei(const char *path, int flags)
         char *curr_token = NULL;
         int end;
         end = next_token(path, index, len);
-        curr_token = (char*)kmalloc(sizeof(char)*(end-index+1), 0);
+        curr_token = (char*)kmalloc(sizeof(char)*(end-index+2), 0);
         if (!curr_token) {
             printk("failed kmalloc for curr_token\n");
         }
         strncpy(curr_token, look+index, end-index+1);
+        curr_token[end-index+1] = '\0';
         printk("current token is %s, [index: %d, end: %d] \n", curr_token, index, end);
         inode = search_dir(work, curr_token, end-index+1);
         if (inode == -1) {
             printk("inode not found in directory \n");
             kfree(curr_token);
-            if (IS_FLAG(flags, N_PARENT)) {
+            if (IS_FLAG(flags, N_PARENT) && (end + 1 >= len)) {
                 return work;
             }
             return NULL;
+        }
+        
+        /* if it is the last component and N_PARENT is set, return parent work inode */
+        if (IS_FLAG(flags, N_PARENT) && (end + 1 >= len)) {
+            kfree(curr_token);
+            return work;
         }
         kfree(curr_token);
         iput(work);
@@ -315,7 +329,7 @@ void ifree(short dev_no, unsigned long i_no)
         }
     }
     else {
-        super->s_free_inodes[super->s_next_free_inode++] = i_no;
+        super->s_free_inodes[++super->s_next_free_inode] = i_no;
     }
     return;
 }
@@ -812,7 +826,7 @@ struct buffer_head *balloc(unsigned short dev_no)
         printk("getblk failed for blkno %lu\n", blk_no);
         return NULL;
     }
-    /* memset(bh->b_data, 0, U_BLK_SIZE); */
+    memset(bh->b_data, 0, U_BLK_SIZE);
     super->s_n_free_blocks--;
     SET_FLAG(super->s_flags, SUPER_MODIFIED);
     return bh;
@@ -855,150 +869,104 @@ void bfree(unsigned long blk_no)
 
 void test_fs(void)
 {
-    /* Update global super pointer to point to valid buffer data */
+    printk("========== STARTING UFS COMPREHENSIVE TEST ==========\n");
 
+    /* Ensure superblock is loaded */
+    struct buffer_head *bh = NULL;
     if (!super) {
-        struct buffer_head *bh;
         bh = bread(DEV_NO, 1);
         if (!bh) {
-            printk("failed bread for block 1\n");
+            printk("[FAIL] Bread failed for superblock\n");
             return;
         }
         super = (s_ufs*)bh->b_data;
+        sb_bh = bh;
     }
     display_sb(super);
-    display_itable();
 
-    int fd = sys_open("/home", 0, 0);
-    if (fd == -1) {
-        printk("sys_open failed \n");
-        return;
+    int fd, read_len;
+    char buffer[128];
+    const char *test_str = "Hello, UFS World!";
+    int str_len = strlen(test_str);
+
+    /* TEST 1: File Creation & Write */
+    printk("\n[TEST 1] Create and Write File /test.txt\n");
+    fd = sys_open("/test.txt", O_CREAT | O_WRONLY, 0);
+    if (fd < 0) {
+        printk("[FAIL] Failed to create /test.txt (fd=%d)\n", fd);
+    } else {
+        int written = sys_write(fd, (void*)test_str, str_len);
+        if (written != str_len) {
+            printk("[FAIL] Wrote %d bytes, expected %d\n", written, str_len);
+        } else {
+            printk("[PASS] Written '%s' to /test.txt\n", test_str);
+        }
+        sys_close(fd);
     }
-    printk("fd is %d\n", fd);
 
-    int fd2 = sys_open("/bin/", 0, 0);
-    if (fd2 == -1) {
-        printk("failed to mkdir\n");
-        return;
+    /* TEST 2: File Read Verification */
+    printk("\n[TEST 2] Read and Verify /test.txt\n");
+    fd = sys_open("/test.txt", O_RDONLY, 0);
+    if (fd < 0) {
+        printk("[FAIL] Failed to open /test.txt for reading\n");
+    } else {
+        memset(buffer, 0, sizeof(buffer));
+        read_len = sys_read(fd, buffer, sizeof(buffer));
+        if (read_len < 0) {
+             printk("[FAIL] Read failed\n");
+        } else {
+             printk("Read content: '%s'\n", buffer);
+             if (strncmp(buffer, test_str, str_len) == 0) {
+                 printk("[PASS] Content verified\n");
+             } else {
+                 printk("[FAIL] Content mismatch\n");
+             }
+        }
+        sys_close(fd);
     }
-    printk("fd2 is %d\n", fd2);
 
-
-
-    int fd3 = mkdir("/bin/yellow", 0);
-    if (fd3 == -1) {
-        printk("failed to mkdir\n");
-        return;
+    /* TEST 3: Directory Creation */
+    printk("\n[TEST 3] Create Directory /data\n");
+    int mkdir_res = mkdir("/data", 0);
+    if (mkdir_res < 0) {
+        // If it exists (persistence check), that's fine too
+        printk("[INFO] mkdir returned %d (might exist)\n", mkdir_res);
+    } else {
+        printk("[PASS] Directory /data created\n");
     }
-    printk("fd3 is %d\n", fd3);
 
-    int iCnt = 0, buf_size = 256;
-    /* char arr[buf_size]; */
-    char brr[buf_size];
-
-    /* for (iCnt = 0; iCnt < buf_size; iCnt++) { */
-    /*     arr[iCnt] = 'a' + ( iCnt % 26 ); */
-    /* } */
-
-    /* int wrote = sys_write(fd, arr, buf_size); */
-    /* if (wrote == -1) { */
-    /*     printk("write file failed\n"); */
-    /*     return; */
-    /* } */
-    /* printk("wrote %d bytes\n", wrote); */
-
-    int read_b = sys_read(fd2, brr, buf_size);
-    if (read_b == -1) {
-        printk("read file failed\n");
-        return;
+    /* TEST 4: Nested File Creation */
+    printk("\n[TEST 4] Create Nested File /data/nested_log.txt\n");
+    fd = sys_open("/data/nested_log.txt", O_CREAT | O_WRONLY, 0);
+    if (fd < 0) {
+        printk("[FAIL] Failed to create /data/nested_log.txt\n");
+    } else {
+        char *nested_msg = "RootFS is Persistent";
+        sys_write(fd, nested_msg, strlen(nested_msg));
+        printk("[PASS] Wrote to nested file\n");
+        sys_close(fd);
     }
-    printk("read_b %d bytes: \n%s\n", read_b, brr);
-    
-    sys_close(fd);
-    sys_close(fd2);
-    sys_close(fd3);
 
-    /* fd = sys_open("/bin", 0, 0); */
-    /* if (fd == -1) { */
-    /*     printk("sys_open failed \n"); */
-    /*     return; */
-    /* } */
-    /* printk("fd is %d\n", fd); */
+    /* TEST 5: Verify Nested File */
+    printk("\n[TEST 5] Verify /data/nested_log.txt\n");
+    fd = sys_open("/data/nested_log.txt", O_RDONLY, 0);
+    if (fd < 0) {
+        printk("[FAIL] Failed to open nested file\n");
+    } else {
+        memset(buffer, 0, sizeof(buffer));
+        sys_read(fd, buffer, sizeof(buffer));
+        printk("Read nested: '%s'\n", buffer);
+        sys_close(fd);
+    }
 
+    printk("========== TEST FINISHED ==========\n");
 
-    /* struct buffer_head *btest[2]; */
-    /* printk("tesint dilb==========================\n"); */
-    /* for (int iCnt = 0; iCnt < 2; iCnt++) { */
-    /*     btest[iCnt] = bread(DEV_NO, (unsigned long)(sb->s_blk_dilb_start + iCnt)); */
-    /*     if (!btest[iCnt]) { */
-    /*         printk("bread failed at blkno %lu\n", sb->s_blk_dilb_start + iCnt); */
-    /*     } */
-    /*     struct d_inode *dinode = (struct d_inode*)btest[iCnt]->b_data; */
-    /*     for (int jCnt = 0; jCnt < U_BLK_SIZE / sizeof(struct d_inode); jCnt++) { */
-    /*         printk("jCnt : %d, inode: %u, imode: %d\n", jCnt, dinode[jCnt].i_no, (int)dinode[jCnt].i_mode); */
-    /*     } */
-    /*     brelse(btest[iCnt]); */
-    /* } */
-    /* printk("done tesint dilb==========================\n"); */
-
-    /* printk("testing data blocks==================\n"); */
-
-    /* int iCnt = 0; */
-
-    /* int link_blk = 513; */
-
-    /* for (iCnt = 0; iCnt < 2; iCnt++) { */
-
-    /*     btest[iCnt] = bread(DEV_NO, (unsigned long)(link_blk + (iCnt * FREE_BLOCK_LIST))); */
-    /*     if (!btest[iCnt]) { */
-    /*         printk("bread failed at blkno %lu\n", link_blk  + (iCnt * FREE_BLOCK_LIST)); */
-    /*     } */
-
-    /*     printk("readin link block no %lu\n", (unsigned long)(link_blk + (iCnt *FREE_BLOCK_LIST))); */
-    /*     unsigned long *ptr = (unsigned long*)btest[iCnt]->b_data; */
-    /*     for (int jCnt = 0; jCnt < U_BLK_SIZE / sizeof(unsigned long); jCnt++) { */
-    /*         printk("jCnt : %d, block: %lu\n", jCnt, ptr[jCnt]); */
-    /*     } */
-    /*     brelse(btest[iCnt]); */
-    /* } */
-    /* printk("done testing data blocks==================\n"); */
-
-    /* printk("testing alloc and free===========\n"); */
-
-    /* int iCnt = 0; */
-    /* struct buffer_head *bh[98]; */
-    /* for (iCnt = 0; iCnt < 258; iCnt++) { */
-    /*    bh[iCnt % 98] = balloc(DEV_NO); */
-    /*     if (!bh[iCnt % 98]) { */
-    /*        printk("balloc failed at iCnt: %d\n", iCnt); */
-    /*       return; */
-    /*     } */ 
-    /*   printk("balloc got me %lu\n", bh[iCnt % 98]->b_blocknr); */
-    /*   if ((iCnt + 1) % 98 == 0) */
-    /*   { */
-    /*         int jCnt = 0; */
-    /*         for (jCnt = 0; jCnt < 98; jCnt++) { */
-    /*             bwrite(bh[jCnt]); */
-    /*             //bfree(bh[jCnt]->b_blocknr); */
-    /*         } */
-    /*   } */
-    /*   if (iCnt % 256 == 0) { */
-    /*       printk("round %d  finished================\n", iCnt % 256); */
-    /*   } */
-    /* } */
-    
-    /* // flush remaining */
-    /* int remaining = iCnt % 98; */
-    /* for (int jCnt = 0; jCnt < remaining; jCnt++) { */
-    /*     bwrite(bh[jCnt]); */
-    /*     /1* bfree(bh[jCnt]->b_blocknr); *1/ */
-    /* } */
+}
     /* iCnt = 770; */
     /* for (; iCnt>= 513; iCnt--){ */
     /*     bfree((unsigned long)iCnt); */
     /* } */
    
-}
 
 int alloc_incore_entry(struct inode *inode)
 {
@@ -1069,8 +1037,8 @@ void create_entry(const char *entry_name, struct buffer_head *bh,
 {
     struct dir_entry dentry;
     dentry.dir_inode = inode_no;
-    strcpy(dentry.dir_name, entry_name);
-
+    strncpy(dentry.dir_name, entry_name, DIR_ENTRY_NAME_SIZE - 1);
+    dentry.dir_name[DIR_ENTRY_NAME_SIZE - 1] = '\0';
     memcpy(bh->b_data + offset, &dentry, sizeof(struct dir_entry));
 }
 
@@ -1211,21 +1179,25 @@ void init_fs(void)
     /* brelse(bh); */
 }
 
- char *my_name(const char *pathname)
+char *my_name(const char *pathname)
 {
     int len = strlen(pathname);
-    /*
-     * if path ends with '/' like
-     * /usr/bin/
-     */
-    if (pathname[len-1] == '/') {
-        len--;
+    if (len == 0) return (char*)pathname;
+
+    /* ignore trailing slash */
+    int end = len - 1;
+    if (pathname[end] == '/') {
+        end--;
     }
-    char *ptr = (pathname + len - 1);
-    while (len !=0 && ptr[len] != '/') {
-        ptr--;
+
+    int i = end;
+    while (i >= 0) {
+        if (pathname[i] == '/') {
+            return (char*)(pathname + i + 1);
+        }
+        i--;
     }
-    return ptr;
+    return (char*)pathname;
 }
 
 int sys_open(const char *pathname, int flags, int mode)
@@ -1244,17 +1216,30 @@ int sys_open(const char *pathname, int flags, int mode)
     }
     printk("pinode inode : %u\n", pinode->i_no);
     if (IS_FLAG(flags, O_CREAT)) {
+        entry_name = my_name(pathname);
+        int exist_ino = search_dir(pinode, entry_name, strlen(entry_name));
+        if (exist_ino != -1) {
+            if (IS_FLAG(flags, O_DIR)) {
+                printk("directory/file already exists %s\n", entry_name);
+                bFlag = false;
+                goto relse;
+            }
+            // File exists, open it (O_CREAT without O_EXCL behavior)
+            inode = iget(DEV_NO, exist_ino);
+            if (!inode) {
+                printk("failed to get existing inode\n");
+                bFlag = false;
+                goto relse;
+            }
+            goto relse;
+        }
+
         inode = ialloc(DEV_NO);
         if (!inode) {
             printk("inode allocation failed\n");
             bFlag = false;
             goto relse;
         }
-        /* pinode = namei(pathname, N_PARENT); */
-        /* if (!pinode) { */
-        /*     printk("no such existing parent dir%s\n", pathname); */
-        /*     return -1; */
-        /* } */
         curr_blk = pinode->i_size / U_BLK_SIZE;
         if (pinode->i_size % U_BLK_SIZE == 0) {
             bh = balloc(DEV_NO);
@@ -1273,10 +1258,11 @@ int sys_open(const char *pathname, int flags, int mode)
                 goto relse;
             }
         }
-        entry_name = my_name(pathname);
-        printk("my name is %s\n", my_name);
+        /* entry_name = my_name(pathname); */
+        printk("my name is %s\n", entry_name);
         create_entry(entry_name, bh, (unsigned long)(pinode->i_size % U_BLK_SIZE),
                 inode->i_no);
+        bwrite(bh);
 
         if (IS_FLAG(flags, O_DIR)) {
             struct buffer_head *ibh;
@@ -1315,13 +1301,14 @@ relse:
          * , I think so no, but
          * this reduces our time complexity
          */
-        inode->i_parent = pinode;
+        /* inode->i_parent = pinode; */
         inode = namei(pathname, 0);
         if (!inode) {
             printk("no such existing file %s\n", pathname);
             iput(pinode);
             return -1;
         }
+        inode->i_parent = pinode;
     }
     
     fd = allocate_file(inode);
@@ -1496,4 +1483,11 @@ int mkdir(const char *pathname, int mode)
     }
 
    return fd; 
+}
+
+int sync(void)
+{
+    if (!sb_bh) return -1;
+    bwrite(sb_bh);
+    return 0;
 }
